@@ -10,7 +10,9 @@
             "name": "base",
             "hidden": true,
             "cacheVariables": {
-                "CMAKE_CXX_FLAGS": "$env{COMMONLIBSSE_COMPILER} $env{COMMONLIBSSE_PLATFORM} $env{COMMONLIBSSE_TEXT}"
+                "CMAKE_CXX_FLAGS": "$env{COMMONLIBSSE_COMPILER} $env{COMMONLIBSSE_PLATFORM} $env{COMMONLIBSSE_TEXT}",
+                "ADD_COMMONLIBSSE_PLUGIN_AUTHOR": "Lynn Pye/Hextun",
+                "ADD_COMMONLIBSSE_PLUGIN_EMAIL": "lynnpye@github.com"
             }
         },
         {
@@ -22,6 +24,9 @@
                 "VCPKG_HOST_TRIPLET": "x64-windows-skse",
                 "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake",
                 "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+            },
+            "environment": {
+                "VCPKG_ROOT": "D:/v"
             }
         },
         {
@@ -55,7 +60,7 @@
                 "CMAKE_CXX_COMPILER": "cl.exe"
             },
             "environment": {
-                "COMMONLIBSSE_COMPILER": "/permissive- /Zc:preprocessor /EHsc $penv{CXXFLAGS} /MP",
+                "COMMONLIBSSE_COMPILER": "/permissive- /Zc:preprocessor /EHsc $penv{CXXFLAGS} /MP /Zc:__cplusplus /std:c++latest",
                 "COMMONLIBSSE_TEXT": "-DUNICODE -D_UNICODE"
             },
             "vendor": {

@@ -2,15 +2,15 @@
     "default-registry": {
         "kind": "git",
         "repository": "https://github.com/microsoft/vcpkg.git",
-        "baseline": "cc288af760054fa489574bd8e22d05aa8fa01e5c"
+        "baseline": "f26ec398c25c4980f33a50391f00a75f7ad62ef7"
     },
     "registries": [
         {
             "kind": "git",
-            "repository": "https://github.com/Monitor221hz/modding-vcpkg-ports",
-            "baseline": "aa6db1d21b631042af707a8ff7a5ac2c8e42abd6",
+            "repository": "https://gitlab.com/lynn.pye/vcpkg-colorglass",
+            "baseline": "c9db013bfcc61f15e5408eed97a7fc00c65f248e",
             "packages": [
-                "commonlibsse-ng-fork"
+                "commonlibsse-ng"
             ]
         }
     ]

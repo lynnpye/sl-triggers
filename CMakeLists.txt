@@ -3,14 +3,27 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Set your project name. This will be the name of your SKSE .dll file.
-project(TemplatePlugin VERSION 0.0.1 LANGUAGES CXX)
+project(sl-triggers-internal VERSION 2.0.0 DESCRIPTION "SL Triggers Redux SKSE Plugin" HOMEPAGE_URL "https://github.com/lynnpye/sl-triggers" LANGUAGES CXX)
 
-#
+# Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
+# set(OUTPUT_FOLDER "C:/path/to/any/folder")
+set(OUTPUT_FOLDER "D:/wabbajack/modlistinstalls/SME/mods/AaDevelopment")
 
 # YOU DO NOT NEED TO EDIT ANYTHING BELOW HERE
 #
 # Please see the "Project setup" section of README.md
 #
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+include(CheckIPOSupported)
+check_ipo_supported(RESULT USE_IPO OUTPUT IPO_OUTPUT)
+if (USE_IPO)
+    message("Enabling interprocedural optimizations.")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+else ()
+    message("Interprocedural optimizations are not supported.")
+endif ()
 
 # If you're not using a mod manager, you probably want the SKSE plugin to go
 # inside of your Skyrim "Data" folder.
@@ -30,12 +43,9 @@ if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
     set(OUTPUT_FOLDER "$ENV{SKYRIM_MODS_FOLDER}/${PROJECT_NAME} ${CMAKE_BUILD_TYPE}")
 endif()
 
-# Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
-# set(OUTPUT_FOLDER "C:/path/to/any/folder")
 
 # Setup your SKSE plugin as an SKSE plugin!
 find_package(CommonLibSSE CONFIG REQUIRED)
-find_package(directxtk CONFIG REQUIRED)
 include(cmake/headerlist.cmake)
 include(cmake/sourcelist.cmake)
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources}) # <--- specifies plugin.cpp
