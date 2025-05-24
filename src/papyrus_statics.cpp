@@ -1,8 +1,8 @@
+#include <REX/W32.h>
+
 using namespace SKSE;
 using namespace SKSE::log;
 using namespace SKSE::stl;
-
-#include <REX/W32.h>
 
 #pragma push(warning)
 #pragma warning(disable:4100)

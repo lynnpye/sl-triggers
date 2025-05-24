@@ -1,5 +1,3 @@
-#include "contexting.h"
-
 static ContextManager* g_ContextManager = nullptr;
 
 OnAfterSKSEInit([]{
