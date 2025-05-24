@@ -1,14 +1,12 @@
 #include "contexting.h"
 
-#include "threadmanager.h"
-
 static ContextManager* g_ContextManager = nullptr;
 
 OnAfterSKSEInit([]{
     g_ContextManager = &ContextManager::GetSingleton();
 });
 
-std::shared_ptr<ThreadContext> ContextManager::CreateThreadContext(RE::TESForm* target, std::string initialScriptName) {
+ThreadContext* ContextManager::CreateThreadContext(RE::TESForm* target, std::string initialScriptName) {
     if (target == nullptr)
         return nullptr;
     
@@ -18,26 +16,20 @@ std::shared_ptr<ThreadContext> ContextManager::CreateThreadContext(RE::TESForm* 
         targetContext = CreateTargetContext(target);
     }
 
-    std::shared_ptr<ThreadContext> newThreadContext = targetContext->CreateThreadContext(initialScriptName);
-    // now I need to hand this off or notify a ThreadManager to start doing something?
-
-
-    return newThreadContext;
+    return targetContext->CreateThreadContext(initialScriptName);
 }
 
-std::shared_ptr<ThreadContext> TargetContext::CreateThreadContext(std::string initialScriptName) {
+ThreadContext* TargetContext::CreateThreadContext(std::string initialScriptName) {
     if (initialScriptName.empty())
         return nullptr;
     
-    std::shared_ptr<ThreadContext> newThreadContext = WithThreads([papa = this, initialScriptName](auto& threads){
-        auto newPtr = std::make_shared<ThreadContext>(papa, initialScriptName);
-        threads.push_back(newPtr);
-        return newPtr;
+    return WithThreads([papa = this, initialScriptName](auto& threads){
+        auto newPtr = std::make_unique<ThreadContext>(papa, initialScriptName);
+        ThreadContext* rawPtr = newPtr.get();
+        threads.push_back(std::move(newPtr));
+        rawPtr->StartWork();
+        return rawPtr;
     });
-
-    ThreadManager::GetSingleton().RegisterContext(newThreadContext);
-
-    return newThreadContext;
 }
 
 void ThreadContext::Execute() {

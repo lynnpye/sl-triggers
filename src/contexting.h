@@ -92,7 +92,7 @@ public:
         });
     }
 
-    std::shared_ptr<ThreadContext> CreateThreadContext(RE::TESForm* target, std::string initialScriptName);
+    ThreadContext* CreateThreadContext(RE::TESForm* target, std::string initialScriptName);
 
     std::string SetGlobalVar(std::string name, std::string value) {
         return WithGlobalVars([&nm = name, &val = value](auto& vars){
@@ -107,6 +107,34 @@ public:
                 return vars[nm];
             } else {
                 return std::string("");
+            }
+        });
+    }
+
+    void StartAllThreads() {
+        WithTargetContexts([](auto& targets){
+            for (auto& target : targets) {
+                target.second.get()->WithThreads([](auto& threads){
+                    for (auto& thread : threads) {
+                        thread->StartWork();
+                    }
+                    return nullptr;
+                });
+                return nullptr;
+            }
+        });
+    }
+
+    void StopAllThreads() {
+        WithTargetContexts([](auto& targets){
+            for (auto& target : targets) {
+                target.second.get()->WithThreads([](auto& threads){
+                    for (auto& thread : threads) {
+                        thread->StartWork();
+                    }
+                    return nullptr;
+                });
+                return nullptr;
             }
         });
     }
@@ -139,7 +167,7 @@ public:
     RE::TESForm* tesTarget;
 
     std::mutex threadsMutex;
-    std::vector<std::shared_ptr<ThreadContext>> threads;
+    std::vector<std::unique_ptr<ThreadContext>> threads;
 
     std::mutex targetVarsMutex;
     std::map<std::string, std::string> targetVars;
@@ -151,7 +179,7 @@ public:
     }
 
     template <typename Func>
-    std::shared_ptr<ThreadContext> WithThreads(Func&& fn) {
+    ThreadContext* WithThreads(Func&& fn) {
         std::lock_guard<std::mutex> lock(threadsMutex);
         return fn(threads);
     }
@@ -179,7 +207,7 @@ public:
         });
     }
 
-    std::shared_ptr<ThreadContext> CreateThreadContext(std::string initialScriptName);
+    ThreadContext* CreateThreadContext(std::string initialScriptName);
 
     void RemoveThreadContext(ThreadContext* threadContextToRemove) {
         if (threadContextToRemove == nullptr)
@@ -187,13 +215,31 @@ public:
         
         WithThreads([papa = this, threadContextToRemove](auto& threads){
             auto it = std::find_if(threads.begin(), threads.end(), 
-                [threadContextToRemove](const std::shared_ptr<ThreadContext>& uptr) {
+                [threadContextToRemove](const std::unique_ptr<ThreadContext>& uptr) {
                     return uptr.get() == threadContextToRemove;
                 });
 
             if (it != threads.end()) {
                 std::iter_swap(it, threads.end() - 1);
                 threads.pop_back();
+            }
+            return nullptr;
+        });
+    }
+
+    void StartAllThreads() {
+        WithThreads([](auto& threads){
+            for (auto& thread : threads) {
+                thread->StartWork();
+            }
+            return nullptr;
+        });
+    }
+
+    void StopAllThreads() {
+        WithThreads([](auto& threads){
+            for (auto& thread : threads) {
+                thread->StopWork();
             }
             return nullptr;
         });
@@ -212,6 +258,8 @@ public:
     }
 
     TargetContext* target;
+
+    std::thread worker;
     
     std::atomic<bool> shouldStop{false};
 
@@ -243,6 +291,18 @@ public:
     std::string WithThreadVars(Func&& fn) {
         std::lock_guard<std::mutex> lock(threadVarsMutex);
         return fn(threadVars);
+    }
+
+    void StartWork() {
+        worker = std::thread([this]{
+            this->Execute();
+            this->target->RemoveThreadContext(this);
+        });
+    }
+
+    void StopWork() {
+        RequestStop();
+        if (worker.joinable()) worker.join();
     }
 
     std::string SetThreadVar(std::string name, std::string value) {

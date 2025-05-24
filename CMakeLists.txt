@@ -3,7 +3,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Set your project name. This will be the name of your SKSE .dll file.
-project(sl-triggers-internal VERSION 2.0.0 DESCRIPTION "SL Triggers Redux SKSE Plugin" HOMEPAGE_URL "https://github.com/lynnpye/sl-triggers" LANGUAGES CXX)
+project(sl-triggers VERSION 2.0.0 DESCRIPTION "SL Triggers Redux SKSE Plugin" HOMEPAGE_URL "https://github.com/lynnpye/sl-triggers" LANGUAGES CXX)
 
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
 # set(OUTPUT_FOLDER "C:/path/to/any/folder")
