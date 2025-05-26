@@ -32,12 +32,18 @@ namespace SystemUtil
 {
     struct File 
     {
+
+    static std::string_view GetPluginName()
+    {
+        auto decl = SKSE::PluginDeclaration::GetSingleton();
+        return decl->GetName();
+    }
         
 	static std::vector<std::string> GetConfigs(std::string_view a_folder, std::string_view a_suffix, std::string_view a_extension = ".ini"sv)
 	{
 		std::vector<std::string> configs{};
 
-		for (const auto iterator = std::filesystem::directory_iterator(a_folder); const auto& entry : iterator) {
+		for (const auto iterator = fs::directory_iterator(a_folder); const auto& entry : iterator) {
 			if (entry.exists()) {
 				if (const auto& path = entry.path(); !path.empty() && path.extension() == a_extension) {
 					if (const auto& fileName = entry.path().string(); fileName.rfind(a_suffix) != std::string::npos) {
