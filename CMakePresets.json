@@ -13,20 +13,20 @@
                 "CMAKE_CXX_FLAGS": "$env{COMMONLIBSSE_COMPILER} $env{COMMONLIBSSE_PLATFORM} $env{COMMONLIBSSE_TEXT}",
                 "ADD_COMMONLIBSSE_PLUGIN_AUTHOR": "Lynn Pye/Hextun",
                 "ADD_COMMONLIBSSE_PLUGIN_EMAIL": "lynnpye@github.com"
+            },
+            "environment": {
+                "VCPKG_ROOT": "D:/v"
             }
         },
         {
             "name": "vcpkg",
             "hidden": true,
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_TOOLCHAIN_FILE": "D:/v/scripts/buildsystems/vcpkg.cmake",
                 "VCPKG_TARGET_TRIPLET": "x64-windows-skse",
                 "VCPKG_HOST_TRIPLET": "x64-windows-skse",
                 "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake",
                 "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
-            },
-            "environment": {
-                "VCPKG_ROOT": "D:/v"
             }
         },
         {

@@ -1,0 +1,39 @@
+--- a/cmake/CommonLibSSE.cmake
++++ b/cmake/CommonLibSSE.cmake
+@@ -105,21 +105,21 @@
+         set(commonlibsse_plugin_compatibility "{ ${commonlibsse_plugin_compatibility} }")
+     endif ()
+ 
+-    file(WRITE "${commonlibsse_plugin_file}"
+-            "#include \"REL/Relocation.h\"\n"
+-            "#include \"SKSE/SKSE.h\"\n"
+-            "\n"
+-            "SKSEPluginInfo(\n"
+-            "    .Version = ${commonlibsse_plugin_version},\n"
+-            "    .Name = \"${commonlibsse_plugin_name}\"sv,\n"
+-            "    .Author = \"${ADD_COMMONLIBSSE_PLUGIN_AUTHOR}\"sv,\n"
+-            "    .SupportEmail = \"${ADD_COMMONLIBSSE_PLUGIN_EMAIL}\"sv,\n"
+-            "    .StructCompatibility = ${commonlibsse_plugin_struct_compatibility},\n"
+-            "    .RuntimeCompatibility = ${commonlibsse_plugin_compatibility},\n"
+-            "    .MinimumSKSEVersion = ${commonlibsse_min_skse_version}\n"
+-            ")\n")
+-
+-    target_sources("${TARGET}" PRIVATE "${commonlibsse_plugin_file}")
++#    file(WRITE "${commonlibsse_plugin_file}"
++#            "#include \"REL/Relocation.h\"\n"
++#            "#include \"SKSE/SKSE.h\"\n"
++#            "\n"
++#            "SKSEPluginInfo(\n"
++#            "    .Version = ${commonlibsse_plugin_version},\n"
++#            "    .Name = \"${commonlibsse_plugin_name}\"sv,\n"
++#            "    .Author = \"${ADD_COMMONLIBSSE_PLUGIN_AUTHOR}\"sv,\n"
++#            "    .SupportEmail = \"${ADD_COMMONLIBSSE_PLUGIN_EMAIL}\"sv,\n"
++#            "    .StructCompatibility = ${commonlibsse_plugin_struct_compatibility},\n"
++#            "    .RuntimeCompatibility = ${commonlibsse_plugin_compatibility},\n"
++#            "    .MinimumSKSEVersion = ${commonlibsse_min_skse_version}\n"
++#            ")\n")
++#
++#    target_sources("${TARGET}" PRIVATE "${commonlibsse_plugin_file}")
+     target_compile_definitions("${TARGET}" PRIVATE __CMAKE_COMMONLIBSSE_PLUGIN=1)
+     target_link_libraries("${TARGET}" PUBLIC CommonLibSSE::CommonLibSSE)
+     target_include_directories("${TARGET}" PUBLIC CommonLibSSE_INCLUDE_DIRS)

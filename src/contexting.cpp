@@ -1,3 +1,6 @@
+#include "contexting.h"
+#include "registrar.h"
+
 static ContextManager* g_ContextManager = nullptr;
 
 OnAfterSKSEInit([]{

@@ -7,6 +7,9 @@
 #include <string>
 #include <cstdint>
 
+#include "RE/Skyrim.h"
+#include "SKSE/SKSE.h"
+
 // Forward declarations for Skyrim classes
 namespace RE {
     class TESForm;

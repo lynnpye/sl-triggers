@@ -1,146 +1,331 @@
-#include <REX/W32.h>
-
-using namespace SKSE;
-using namespace SKSE::log;
-using namespace SKSE::stl;
-
 #pragma push(warning)
 #pragma warning(disable:4100)
-namespace plugin {
-    namespace Util {
 
-        class VoidCallbackFunctor : public RE::BSScript::IStackCallbackFunctor {
-            public:
-                explicit VoidCallbackFunctor(std::function<void()> callback)
-                    : onDone(std::move(callback)) {}
+#include "RE/Skyrim.h"
+#include "SKSE/SKSE.h"
 
-                void operator()(RE::BSScript::Variable) override {
-                    // This is called when the script function finishes
-                    if (onDone) {
-                        onDone();
+#include "papyrus_impl.h"
+#include "bindings.h"
+#include "util.h"
+
+
+static std::int32_t sessionId;
+
+void plugin::GenerateNewSessionId() {
+    static std::random_device rd;
+    static std::mt19937 engine(rd());
+    static std::uniform_int_distribution<std::int32_t> dist(std::numeric_limits<std::int32_t>::min(),
+                                                            std::numeric_limits<std::int32_t>::max());
+    sessionId = dist(engine);
+}
+
+std::int32_t plugin::GetSessionId() {
+    return sessionId;
+}
+
+namespace {
+
+    std::vector<RE::TESQuest*> GetAllQuestsWithSlTriggersExtension()
+    {
+        std::vector<RE::TESQuest*> result;
+
+        auto* dataHandler = RE::TESDataHandler::GetSingleton();
+        if (!dataHandler)
+            return result;
+
+        // Get all quests
+        auto& quests = dataHandler->GetFormArray<RE::TESQuest>();
+
+        auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+        if (!vm)
+            return result;
+
+        for (auto* quest : quests) {
+            if (!quest)
+                continue;
+            auto handlePolicy = RE::BSScript::Internal::VirtualMachine::GetSingleton()->GetObjectHandlePolicy();
+            auto handle = handlePolicy->GetHandleForObject(quest->FORMTYPE, quest);
+            if (!handle)
+                continue;
+
+            // Try to find any bound script object
+            RE::BSTSmartPointer<RE::BSScript::Object> objPtr;
+            if (vm->FindBoundObject(handle, "sl_triggersExtension", objPtr)) {
+                if (objPtr && objPtr->GetTypeInfo() && objPtr->GetTypeInfo()->GetName() == "sl_triggersExtension") {
+                    result.push_back(quest);
+                }
+            }
+        }
+
+        return result;
+    }
+
+
+    struct FunctionLibrary {
+        std::string configFile;
+        std::string functionFile;
+        std::string extensionKey;
+        std::int32_t priority;
+
+        explicit FunctionLibrary(std::string _configFile, std::string _functionFile, std::string _extensionKey, std::int32_t _priority) : configFile(_configFile), functionFile(_functionFile), extensionKey(_extensionKey), priority(_priority) {}
+    };
+
+    static std::vector<std::unique_ptr<FunctionLibrary>> g_FunctionLibraries;
+    static std::unordered_map<std::string_view, std::string_view> functionScriptCache;
+
+    std::vector<std::string> GetFunctionLibraries() {
+        g_FunctionLibraries.clear();
+
+        using namespace std;
+
+        vector<string> libs = { "sl_triggersCmdLibSLT" };
+        vector<int> libpris = { 0 };
+
+
+
+        /*
+            {
+
+                SKSE::GetPluginHandle();
+                fs::path cur = fs::current_path();
+                spdlog::info("current path :{}:", cur.string());
+                fs::path folderPath = fs::path("."); //fs::path("Data") / "SKSE" / "Plugins" / "sl_triggers" / "extensions";
+
+                spdlog::info("trying with folder (vfs?) :{}:", folderPath.string());
+
+                for (const auto& entry: fs::directory_iterator(folderPath)) {
+                    if (entry.is_directory())
+                        spdlog::info("would have pushed back:\n\tpath() :{}:", entry.path().string());
+                }
+
+                std::vector<std::string> parts = {"SKSE", "Plugins", "sl_triggers", "extensions"};
+                folderPath = fs::path("Data");
+                spdlog::info("PART {}: trying path {}", "Data", folderPath.string());
+                for (const auto& entry: fs::directory_iterator(folderPath)) {
+                    if (entry.is_directory())
+                        spdlog::info("PART {}: would have pushed back:\n\tpath() :{}:", "Data", entry.path().string());
+                }
+                for (auto part : parts) {
+                    folderPath /= part;
+                    spdlog::info("PART {}: trying path {}", part, folderPath.string());
+                    for (const auto& entry: fs::directory_iterator(folderPath)) {
+                        if (entry.is_directory())
+                            spdlog::info("PART {}: would have pushed back:\n\tpath() :{}:", part, entry.path().string());
                     }
                 }
 
-                void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
+                spdlog::info("got here with sanity intact!");
+            }
+*/
 
-            private:
-                std::function<void()> onDone;
-        };
 
-        
-        std::int32_t sessionId;
 
-        void GenerateNewSessionId() {
-            static std::random_device rd;
-            static std::mt19937 engine(rd());
-            static std::uniform_int_distribution<std::int32_t> dist(std::numeric_limits<std::int32_t>::min(),
-                                                                    std::numeric_limits<std::int32_t>::max());
-            sessionId = dist(engine);
+        vector<string> libconfigs;
+        fs::path folderPath = fs::path("Data") / "SKSE" / "Plugins" / "sl_triggers" / "extensions";
+
+        for (const auto& entry : fs::directory_iterator(folderPath)) {
+            if (entry.is_regular_file())
+                libconfigs.push_back(entry.path().filename().string());
         }
 
-        static std::unordered_map<std::string_view, std::string_view> functionScriptCache;
+        string tail = "-libraries.json";
+        for (const auto& filename : libconfigs) {
+            if (filename.size() >= tail.size() && 
+                filename.substr(filename.size() - tail.size()) == tail) {
+                
+                string extensionKey = filename.substr(0, filename.size() - tail.size());
+                if (!extensionKey.empty()) {
+                    // Parse JSON file
+                    nlohmann::json j;
+                    try {
+                        std::ifstream in(folderPath / filename);
+                        in >> j;
+                    } catch (...) {
+                        continue; // skip invalid json
+                    }
+                    // Assume root is an object: keys = lib names, values = int priorities
+                    for (auto it = j.begin(); it != j.end(); ++it) {
+                        string lib = it.key();
+                        std::int32_t pri = 1000;
+                        if (it.value().is_number_integer())
+                            pri = it.value().get<int>();
+                        g_FunctionLibraries.push_back(std::move(std::make_unique<FunctionLibrary>(filename, lib, extensionKey, pri)));
+                    }
+                }
+            }
+        }
 
-        /*
-        RE::BSTSmartPointer<RE::BSScript::Object> GetScriptObject_AME(RE::ActiveEffect* ae) {
-            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-            auto* handlePolicy = vm->GetObjectHandlePolicy();
-            auto handle = handlePolicy->GetHandleForObject(ae->VMTYPEID, ae);
+        sort(g_FunctionLibraries.begin(), g_FunctionLibraries.end(), [](const auto& a, const auto& b) {
+            return a->priority < b->priority;
+        });
 
-            RE::BSFixedString bsScriptName("sl_triggersCmd");
+        // Return just the sorted lib names
+        vector<string> result;
+        for (const auto& lib : g_FunctionLibraries)
+            result.push_back(lib->functionFile);
+        for (auto res : result) {
+            spdlog::info("result :{}:", res);
+        }
+        return result;
+    }
 
-            auto it = vm->attachedScripts.find(handle);
-            if (it == vm->attachedScripts.end()) {
-                spdlog::error("{}: vm->attachedScripts couldn't find handle[{}] scriptName[{}]", __func__, handle, bsScriptName.c_str());
-                return nullptr;
+    bool PrecacheLibraries() {
+        
+        spdlog::flush_on(spdlog::level::info);
+        spdlog::info("PrecacheLibraries starting.");
+        std::vector<std::string> _scriptnames = GetFunctionLibraries();
+        if (_scriptnames.empty()) {
+            spdlog::info("PrecacheLibraries: _scriptnames was empty");
+            return false;
+        }
+        auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+        RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> typeinfoptr;
+        for (const auto& _scriptname: _scriptnames) {
+            bool success = vm->GetScriptObjectType1(_scriptname, typeinfoptr);
+
+            if (!success) {
+                continue;
             }
 
-            for (std::uint32_t i = 0; i < it->second.size(); i++) {
-                auto& attachedScript = it->second[i];
-                if (attachedScript) {
-                    auto* script = attachedScript.get();
-                    if (script) {
-                        auto info = script->GetTypeInfo();
-                        if (info) {
-                            if (info->name == bsScriptName) {
-                                spdlog::trace("script[{}] found attached to handle[{}]", bsScriptName.c_str(), handle);
-                                RE::BSTSmartPointer<RE::BSScript::Object> result(script);
-                                return result;
-                            }
+            success = false;
+
+            int numglobs = typeinfoptr->GetNumGlobalFuncs();
+            auto globiter = typeinfoptr->GetGlobalFuncIter();
+
+            for (int i = 0; i < numglobs; i++) {
+                auto libfunc = globiter[i].func;
+
+                RE::BSFixedString libfuncName = libfunc->GetName();
+
+                auto cachedIt = functionScriptCache.find(libfuncName);
+                if (cachedIt != functionScriptCache.end()) {
+                    // cache hit, continue
+                    continue;
+                }
+
+                if (libfunc->GetParamCount() != 3) {
+                    continue;
+                }
+
+                RE::BSFixedString paramName;
+                RE::BSScript::TypeInfo paramTypeInfo;
+
+                libfunc->GetParam(0, paramName, paramTypeInfo);
+
+                std::string Actor_name("Actor");
+                if (!paramTypeInfo.IsObject() && Actor_name != paramTypeInfo.TypeAsString()) {
+                    continue;
+                }
+
+                libfunc->GetParam(1, paramName, paramTypeInfo);
+
+                std::string ActiveMagicEffect_name("ActiveMagicEffect");
+                if (!paramTypeInfo.IsObject() && ActiveMagicEffect_name != paramTypeInfo.TypeAsString()) {
+                    continue;
+                }
+
+                libfunc->GetParam(2, paramName, paramTypeInfo);
+
+                if (paramTypeInfo.GetRawType() != RE::BSScript::TypeInfo::RawType::kStringArray) {
+                    continue;
+                }
+
+                functionScriptCache[libfuncName] = _scriptname;
+            }
+        }
+
+        spdlog::info("PrecacheLibraries completed.");
+        return true;
+    }
+
+    bool IsValidPathComponent(const std::string& input) {
+        // Disallow characters illegal in Windows filenames
+        static const std::regex validPattern(R"(^[^<>:"/\\|?*\x00-\x1F]+$)");
+        return std::regex_match(input, validPattern);
+    }
+
+    class VoidCallbackFunctor : public RE::BSScript::IStackCallbackFunctor {
+        public:
+            explicit VoidCallbackFunctor(std::function<void()> callback)
+                : onDone(std::move(callback)) {}
+
+            void operator()(RE::BSScript::Variable) override {
+                // This is called when the script function finishes
+                if (onDone) {
+                    onDone();
+                }
+            }
+
+            void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
+
+        private:
+            std::function<void()> onDone;
+    };
+
+    std::string TrimString(const std::string& str) {
+        size_t first = str.find_first_not_of(" \t\n\r");
+        if (first == std::string::npos)
+            return "";  // this still trims whitespace-only lines to ""
+        size_t last = str.find_last_not_of(" \t\n\r");
+        return str.substr(first, last - first + 1);
+    }
+
+    bool isNumeric(const std::string& str, double& outValue) {
+        const char* begin = str.c_str();
+        const char* end = begin + str.size();
+
+        auto result = std::from_chars(begin, end, outValue);
+        return result.ec == std::errc() && result.ptr == end;
+    }
+
+
+    /*
+    RE::BSTSmartPointer<RE::BSScript::Object> GetScriptObject_AME(RE::ActiveEffect* ae) {
+        auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+        auto* handlePolicy = vm->GetObjectHandlePolicy();
+        auto handle = handlePolicy->GetHandleForObject(ae->VMTYPEID, ae);
+
+        RE::BSFixedString bsScriptName("sl_triggersCmd");
+
+        auto it = vm->attachedScripts.find(handle);
+        if (it == vm->attachedScripts.end()) {
+            spdlog::error("{}: vm->attachedScripts couldn't find handle[{}] scriptName[{}]", __func__, handle, bsScriptName.c_str());
+            return nullptr;
+        }
+
+        for (std::uint32_t i = 0; i < it->second.size(); i++) {
+            auto& attachedScript = it->second[i];
+            if (attachedScript) {
+                auto* script = attachedScript.get();
+                if (script) {
+                    auto info = script->GetTypeInfo();
+                    if (info) {
+                        if (info->name == bsScriptName) {
+                            spdlog::trace("script[{}] found attached to handle[{}]", bsScriptName.c_str(), handle);
+                            RE::BSTSmartPointer<RE::BSScript::Object> result(script);
+                            return result;
                         }
                     }
                 }
             }
-
-            return nullptr;
-        }
-        */
-
-        bool PrecacheLibraries(std::vector<RE::BSFixedString> _scriptnames) {
-            if (_scriptnames.empty()) {
-                spdlog::info("PrecacheLibraries: _scriptnames was empty");
-                return false;
-            }
-            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-            RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> typeinfoptr;
-            for (const auto& _scriptname: _scriptnames) {
-                bool success = vm->GetScriptObjectType1(_scriptname, typeinfoptr);
-
-                if (!success) {
-                    continue;
-                }
-
-                success = false;
-
-                int numglobs = typeinfoptr->GetNumGlobalFuncs();
-                auto globiter = typeinfoptr->GetGlobalFuncIter();
-
-                for (int i = 0; i < numglobs; i++) {
-                    auto libfunc = globiter[i].func;
-
-                    RE::BSFixedString libfuncName = libfunc->GetName();
-
-                    auto cachedIt = functionScriptCache.find(libfuncName);
-                    if (cachedIt != functionScriptCache.end()) {
-                        // cache hit, continue
-                        continue;
-                    }
-
-                    if (libfunc->GetParamCount() != 3) {
-                        continue;
-                    }
-
-                    RE::BSFixedString paramName;
-                    RE::BSScript::TypeInfo paramTypeInfo;
-
-                    libfunc->GetParam(0, paramName, paramTypeInfo);
-
-                    std::string Actor_name("Actor");
-                    if (!paramTypeInfo.IsObject() && Actor_name != paramTypeInfo.TypeAsString()) {
-                        continue;
-                    }
-
-                    libfunc->GetParam(1, paramName, paramTypeInfo);
-
-                    std::string ActiveMagicEffect_name("ActiveMagicEffect");
-                    if (!paramTypeInfo.IsObject() && ActiveMagicEffect_name != paramTypeInfo.TypeAsString()) {
-                        continue;
-                    }
-
-                    libfunc->GetParam(2, paramName, paramTypeInfo);
-
-                    if (paramTypeInfo.GetRawType() != RE::BSScript::TypeInfo::RawType::kStringArray) {
-                        continue;
-                    }
-
-                    functionScriptCache[libfuncName] = _scriptname;
-                }
-            }
-
-            return true;
         }
 
-        bool RunOperationOnActor(/*std::vector<RE::BSFixedString> _scriptnames,*/ RE::Actor* _cmdTargetActor, RE::ActiveEffect* _cmdPrimary,
-                                 std::vector<RE::BSFixedString> _param) {
+        return nullptr;
+    }
+    */
+
+    PLUGIN_BINDINGS_PAPYRUS_CLASS(sl_triggers_internal) {
+
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_GetSessionId) -> std::int32_t {
+            return plugin::GetSessionId();
+        };
+
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_PrecacheLibraries) -> bool {
+            return PrecacheLibraries();
+        };
+
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_RunOperationOnActor, RE::Actor* _cmdTargetActor, RE::ActiveEffect* _cmdPrimary,
+                                 std::vector<std::string> _param) -> bool {
             bool success = false;
 
             if (_cmdPrimary && _cmdTargetActor) {
@@ -163,7 +348,7 @@ namespace plugin {
 
                 auto* operationArgs =
                     RE::MakeFunctionArguments(static_cast<RE::Actor*>(_cmdTargetActor), static_cast<RE::ActiveEffect*>(_cmdPrimary),
-                                              static_cast<std::vector<RE::BSFixedString>>(_param));
+                                              static_cast<std::vector<std::string>>(_param));
 
                 if (_param.size() > 0) {
                     auto cachedIt = functionScriptCache.find(_param[0]);
@@ -202,17 +387,13 @@ namespace plugin {
             }
 
             return success;
-        }
+        };
 
-        std::string TrimString(const std::string& str) {
-            size_t first = str.find_first_not_of(" \t\n\r");
-            if (first == std::string::npos)
-                return "";  // this still trims whitespace-only lines to ""
-            size_t last = str.find_last_not_of(" \t\n\r");
-            return str.substr(first, last - first + 1);
-        }
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_IsLoaded) -> bool {
+            return true;
+        };
 
-        std::vector<std::string> SplitLinesTrimmed(const std::string& content) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_SplitLinesTrimmed, const std::string content) -> std::vector<std::string> {
             std::vector<std::string> lines;
             size_t start = 0;
             size_t i = 0;
@@ -246,10 +427,9 @@ namespace plugin {
             }
 
             return lines;
-        }
+        };
 
-
-        std::string GetTranslatedString(const std::string& input) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_GetTranslatedString, const std::string input) -> std::string {
             auto sfmgr = RE::BSScaleformManager::GetSingleton();
             if (!(sfmgr)) {
                 return input;
@@ -284,9 +464,9 @@ namespace plugin {
 
             // Fallback: return original string if no translation found
             return input;
-        }
+        };
 
-        std::vector<RE::ActiveEffect*> GetActiveEffectsForActor(RE::Actor* _theActor) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_GetActiveEffectsForActor, RE::Actor* _theActor) -> std::vector<RE::ActiveEffect*> {
             std::vector<RE::ActiveEffect*> activeEffects;
 
             if (_theActor) {
@@ -298,9 +478,9 @@ namespace plugin {
             }
 
             return activeEffects;
-        }
+        };
 
-        std::vector<std::string> SplitLines(const std::string& content) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_SplitLines, std::string content) -> std::vector<std::string> {
             std::vector<std::string> lines;
             size_t start = 0;
             size_t i = 0;
@@ -334,9 +514,9 @@ namespace plugin {
             }
 
             return lines;
-        }
+        };
 
-        std::vector<std::string> Tokenize(const std::string& input) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_Tokenize, std::string input) -> std::vector<std::string> {
             std::vector<std::string> tokens;
             std::string current;
             bool inQuotes = false;
@@ -406,20 +586,9 @@ namespace plugin {
                 //spdlog::info("Token {}: [{}]", i, tokens[i]);
             }
             return tokens;
-        }
+        };
 
-        namespace fs = std::filesystem;
-
-        bool IsValidPathComponent(const std::string& input) {
-            // Disallow characters illegal in Windows filenames
-            static const std::regex validPattern(R"(^[^<>:"/\\|?*\x00-\x1F]+$)");
-            return std::regex_match(input, validPattern);
-        }
-
-        bool DeleteTrigger(RE::BSFixedString extensionKey, RE::BSFixedString triggerKey) {
-            std::string extKeyStr = extensionKey.c_str();
-            std::string trigKeyStr = triggerKey.c_str();
-
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_DeleteTrigger, std::string extKeyStr, std::string trigKeyStr) -> bool {
             if (!IsValidPathComponent(extKeyStr) || !IsValidPathComponent(trigKeyStr)) {
                 spdlog::error("Invalid characters in extensionKey ({}) or triggerKey ({})", extKeyStr, trigKeyStr);
                 return false;
@@ -451,19 +620,9 @@ namespace plugin {
                 spdlog::info("Failed to delete {}: {}", filePath.string(), ec.message());
                 return false;
             }
-        }
+        };
 
-
-        bool isNumeric(const std::string& str, double& outValue) {
-            const char* begin = str.c_str();
-            const char* end = begin + str.size();
-
-            auto result = std::from_chars(begin, end, outValue);
-            return result.ec == std::errc() && result.ptr == end;
-        }
-
-        // Main logic: numeric if both parse cleanly, else string compare
-        bool SmartEquals(const std::string& a, const std::string& b) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_SmartEquals, std::string a, std::string b) {
             double aNum = 0.0, bNum = 0.0;
             bool aIsNum = isNumeric(a, aNum);
             bool bIsNum = isNumeric(b, bNum);
@@ -476,15 +635,13 @@ namespace plugin {
             }
 
             return outcome;
-        }
+        };
 
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_FindFormByEditorId, std::string a_editorID) -> RE::TESForm* {
+            return RE::TESForm::LookupByEditorID(a_editorID);
+        };
 
-        RE::TESForm* FindFormByEditorId(const std::string_view& a_editorID) {
-            RE::TESForm* result = RE::TESForm::LookupByEditorID(a_editorID);
-            return result;
-        }
-
-        std::vector<RE::TESObjectREFR*> FindCOCHeadingMarkers(RE::TESObjectCELL* cell) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_FindCOCHeadingMarkers, RE::TESObjectCELL* cell) -> std::vector<RE::TESObjectREFR*> {
             std::vector<RE::TESObjectREFR*> results;
 
             if (!cell) {
@@ -517,9 +674,9 @@ namespace plugin {
             }
 
             return results;
-        }
+        };
 
-        std::vector<RE::TESObjectREFR*> FindCOCHeadingMarkersForLocation(RE::BGSLocation* location) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_FindCOCHeadingMarkersForLocation, RE::BGSLocation* location) -> std::vector<RE::TESObjectREFR*> {
             std::vector<RE::TESObjectREFR*> results;
 
             if (!location) {
@@ -575,123 +732,24 @@ namespace plugin {
         */
 
             return results;
-        }
+        };
 
-        RE::BGSLocation* GetLocationFromCell(RE::TESObjectCELL* cell) {
+        PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(_GetLocationFromCell, RE::TESObjectCELL* cell) -> RE::BGSLocation* {
             if (!cell) {
                 return nullptr;
             }
 
             return cell->GetLocation();
-        }
+        };
+    }
 
+    OnNewGame([]{
+        plugin::GenerateNewSessionId();
+    });
 
-
-
-    }  // namespace Util
-
-    namespace Papyrus {
-
-        bool PrecacheLibraries(RE::StaticFunctionTag*, std::vector<RE::BSFixedString> _scriptnames) {
-            return Util::PrecacheLibraries(_scriptnames);
-        }
-
-        bool RunOperationOnActor(RE::StaticFunctionTag*, /*std::vector<RE::BSFixedString> _scriptnames,*/ RE::Actor* _cmdTargetActor,
-                                 RE::ActiveEffect* _cmdPrimary, std::vector<RE::BSFixedString> _param) {
-            return Util::RunOperationOnActor(/*_scriptnames,*/ _cmdTargetActor, _cmdPrimary, _param);
-        }
-
-        std::vector<std::string> SplitLinesTrimmed(RE::StaticFunctionTag*, RE::BSFixedString _fileString) {
-            return Util::SplitLinesTrimmed(_fileString.c_str());
-        }
-
-        std::string GetTranslatedString(RE::StaticFunctionTag*, RE::BSFixedString _translationKey) {
-            std::string somevalue = Util::GetTranslatedString(_translationKey.c_str());
-            return somevalue;
-        }
-
-        std::vector<RE::ActiveEffect*> GetActiveMagicEffectsForActor(RE::StaticFunctionTag*, RE::Actor* _theActor) {
-            return Util::GetActiveEffectsForActor(_theActor);
-        }
-
-        bool IsLoaded(RE::StaticFunctionTag*) {
-            return true;
-        }
-
-        std::vector<std::string> SplitLines(RE::StaticFunctionTag*, RE::BSFixedString _fileString) {
-            return Util::SplitLines(_fileString.c_str());
-        }
-
-        std::vector<std::string> Tokenize(RE::StaticFunctionTag*, RE::BSFixedString _tokenString) {
-            return Util::Tokenize(_tokenString.c_str());
-        }
-
-        bool DeleteTrigger(RE::StaticFunctionTag*, RE::BSFixedString extensionKey, RE::BSFixedString triggerKey) {
-            return Util::DeleteTrigger(extensionKey, triggerKey);
-        }
-
-        int GetSessionId(RE::StaticFunctionTag*) {
-            return plugin::Util::sessionId;
-        }
-
-        bool SmartEquals(RE::StaticFunctionTag*, RE::BSFixedString a, RE::BSFixedString b) {
-            return Util::SmartEquals(a.c_str(), b.c_str());
-        }
-
-        RE::TESForm* FindFormByEditorId(RE::StaticFunctionTag*, RE::BSFixedString bs_editorId) {
-            return Util::FindFormByEditorId(bs_editorId);
-        }
-
-        RE::BGSLocation* GetLocationFromCell(RE::StaticFunctionTag*, RE::TESObjectCELL* cell) {
-            return Util::GetLocationFromCell(cell);
-        }
-
-        std::vector<RE::TESObjectREFR*> FindCOCHeadingMarkers(RE::StaticFunctionTag*, RE::TESObjectCELL* cell) {
-            return Util::FindCOCHeadingMarkers(cell);
-        }
-
-        std::vector<RE::TESObjectREFR*> FindCOCHeadingMarkersForLocation(RE::StaticFunctionTag*, RE::BGSLocation* location) {
-            return Util::FindCOCHeadingMarkersForLocation(location);
-        }
-
-        bool Register(RE::BSScript::IVirtualMachine* vm) {
-            // I may have untreated problems?? :)
-            // but the alignment... so pretty...
-            spdlog::info("registering");
-            vm->RegisterFunction("_PrecacheLibraries", "sl_triggers_internal", PrecacheLibraries, true);
-            vm->RegisterFunction("_RunOperationOnActor", "sl_triggers_internal", RunOperationOnActor);
-            vm->RegisterFunction("_SplitLinesTrimmed", "sl_triggers_internal", SplitLinesTrimmed, true);
-            vm->RegisterFunction("_GetTranslatedString", "sl_triggers_internal", GetTranslatedString);
-            vm->RegisterFunction("_GetActiveMagicEffectsForActor", "sl_triggers_internal", GetActiveMagicEffectsForActor);
-            vm->RegisterFunction("_IsLoaded", "sl_triggers_internal", IsLoaded, true);
-            vm->RegisterFunction("_SplitLines", "sl_triggers_internal", SplitLines, true);
-            vm->RegisterFunction("_Tokenize", "sl_triggers_internal", Tokenize, true);
-            vm->RegisterFunction("_DeleteTrigger", "sl_triggers_internal", DeleteTrigger, true);
-            vm->RegisterFunction("_GetSessionId", "sl_triggers_internal", GetSessionId, true);
-            vm->RegisterFunction("_SmartEquals", "sl_triggers_internal", SmartEquals, true);
-            vm->RegisterFunction("_FindFormByEditorId", "sl_triggers_internal", FindFormByEditorId);
-            vm->RegisterFunction("_GetLocationFromCell", "sl_triggers_internal", GetLocationFromCell);
-            vm->RegisterFunction("_FindCOCHeadingMarkers", "sl_triggers_internal", FindCOCHeadingMarkers);
-            vm->RegisterFunction("_FindCOCHeadingMarkersForLocation", "sl_triggers_internal", FindCOCHeadingMarkersForLocation);
-            spdlog::info("registered");
-
-            return true;
-        }
-    }  // namespace Papyrus
-}  // namespace plugin
-
-
-OnAfterSKSEInit([]{
-    spdlog::info("Registering functions");
-    SKSE::GetPapyrusInterface()->Register(plugin::Papyrus::Register);
-});
-
-OnNewGame([]{
-    plugin::Util::GenerateNewSessionId();
-})
-
-OnPostLoadGame([]{
-    plugin::Util::GenerateNewSessionId();
-})
+    OnPostLoadGame([]{
+        plugin::GenerateNewSessionId();
+    });
+}
 
 #pragma pop()

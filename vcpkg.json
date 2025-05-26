@@ -3,6 +3,9 @@
     "name": "sl-triggers",
     "version-string": "2.0.0",
     "dependencies": [
-        "commonlibsse-ng"
+        "vcpkg-cmake",
+        "commonlibsse-ng",
+        "nlohmann-json",
+        "caprica"
     ]
 }

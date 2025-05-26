@@ -1,6 +1,6 @@
 # It's recommended to set a minimum CMake version.
 # If you use CMake features from higher versions, update this to match.
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 4.00 FATAL_ERROR)
 
 # Set your project name. This will be the name of your SKSE .dll file.
 project(sl-triggers VERSION 2.0.0 DESCRIPTION "SL Triggers Redux SKSE Plugin" HOMEPAGE_URL "https://github.com/lynnpye/sl-triggers" LANGUAGES CXX)
@@ -49,6 +49,23 @@ find_package(CommonLibSSE CONFIG REQUIRED)
 include(cmake/headerlist.cmake)
 include(cmake/sourcelist.cmake)
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES ${headers} ${sources}) # <--- specifies plugin.cpp
+
+add_custom_command(
+  TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E remove "${CMAKE_CURRENT_BINARY_DIR}/__${PROJECT_NAME}Plugin.cpp"
+)
+
+set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
+find_package(nlohmann_json CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
+
+find_package(caprica CONFIG REQUIRED)
+target_link_libraries(${PROJECT_NAME} PRIVATE caprica::caprica)
+
+
+#add_library(caprica STATIC IMPORTED)
+#set_target_properties(caprica PROPERTIES STATIC_LIBRARY_OPTIONS "/Lcaprica")
+#target_link_libraries(${PROJECT_NAME} PRIVATE caprica)
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23) # <--- use C++23 standard
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h) # <--- PCH.h is required!

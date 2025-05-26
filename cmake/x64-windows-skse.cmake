@@ -6,3 +6,6 @@ if (${PORT} MATCHES "fully-dynamic-game-engine|skse|qt*")
 else ()
     set(VCPKG_LIBRARY_LINKAGE static)
 endif ()
+
+set($ENV{PATH} "C:/Users/Lynn/bin;D:/v;D:/tools/CMake/bin;D:/tools/ninja-win;$ENV{PATH}")
+set($ENV{VCPKG_ROOT} "D:/v")

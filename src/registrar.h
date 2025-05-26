@@ -5,6 +5,9 @@
 #include <mutex>
 #include <cstdint>
 
+#include "RE/Skyrim.h"
+#include "SKSE/SKSE.h"
+
 
 class RegistrationClass {
 public:
@@ -59,61 +62,61 @@ private:
 
 using SKSEReg = RegistrationClass;
  
-#define CONCATENATE_DETAIL(x, y) x##y
-#define CONCATENATE(x, y) CONCATENATE_DETAIL(x, y)
-#define UNIQUE_NAME(prefix) CONCATENATE(prefix, __LINE__)
+#define REGISTRATION_CONCATENATE_DETAIL(x, y) x##y
+#define REGISTRATION_CONCATENATE(x, y) REGISTRATION_CONCATENATE_DETAIL(x, y)
+#define REGISTRATION_UNIQUE_NAME(prefix) REGISTRATION_CONCATENATE(prefix, __LINE__)
 
 #define OnAfterSKSEInit(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoInitter UNIQUE_NAME(_OnAfterSKSEInit_)(lambda); \
+    static ::RegistrationClass::AutoInitter REGISTRATION_UNIQUE_NAME(_OnAfterSKSEInit_)(lambda); \
 }
 
 #define OnQuit(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoQuitter UNIQUE_NAME(_OnQuit_)(lambda); \
+    static ::RegistrationClass::AutoQuitter REGISTRATION_UNIQUE_NAME(_OnQuit_)(lambda); \
 }
 
 #define OnPostLoad(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnPostLoad_)(::SKSE::MessagingInterface::kPostLoad, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnPostLoad_)(::SKSE::MessagingInterface::kPostLoad, lambda); \
 }
 
 #define OnPostPostLoad(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnPostPostLoad_)(::SKSE::MessagingInterface::kPostPostLoad, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnPostPostLoad_)(::SKSE::MessagingInterface::kPostPostLoad, lambda); \
 }
 
 #define OnPreLoadGame(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnPreLoadGame_)(::SKSE::MessagingInterface::kPreLoadGame, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnPreLoadGame_)(::SKSE::MessagingInterface::kPreLoadGame, lambda); \
 }
 
 #define OnPostLoadGame(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnPostLoadGame_)(::SKSE::MessagingInterface::kPostLoadGame, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnPostLoadGame_)(::SKSE::MessagingInterface::kPostLoadGame, lambda); \
 }
 
 #define OnSaveGame(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnSaveGame_)(::SKSE::MessagingInterface::kSaveGame, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnSaveGame_)(::SKSE::MessagingInterface::kSaveGame, lambda); \
 }
 
 #define OnDeleteGame(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnDeleteGame_)(::SKSE::MessagingInterface::kDeleteGame, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnDeleteGame_)(::SKSE::MessagingInterface::kDeleteGame, lambda); \
 }
 
 #define OnInputLoaded(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnInputLoaded_)(::SKSE::MessagingInterface::kInputLoaded, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnInputLoaded_)(::SKSE::MessagingInterface::kInputLoaded, lambda); \
 }
 
 #define OnNewGame(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnNewGame_)(::SKSE::MessagingInterface::kNewGame, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnNewGame_)(::SKSE::MessagingInterface::kNewGame, lambda); \
 }
 
 #define OnDataLoaded(lambda) \
 namespace { \
-    static ::RegistrationClass::AutoRegister UNIQUE_NAME(_OnDataLoaded_)(::SKSE::MessagingInterface::kDataLoaded, lambda); \
+    static ::RegistrationClass::AutoRegister REGISTRATION_UNIQUE_NAME(_OnDataLoaded_)(::SKSE::MessagingInterface::kDataLoaded, lambda); \
 }

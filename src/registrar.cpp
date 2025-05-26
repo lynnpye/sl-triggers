@@ -1,3 +1,6 @@
+#include "registrar.h"
+#include "hooks.h"
+
 #include <spdlog/sinks/basic_file_sink.h>
 
 std::function<void(SKSE::MessagingInterface::Message*)> RegistrationClass::_msgHandler = nullptr;

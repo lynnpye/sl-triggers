@@ -1,13 +1,8 @@
 #pragma once
-
-#include "RE/Skyrim.h"
-#include "SKSE/SKSE.h"
  
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
-#include "contexting.h"
-#include "hooks.h"
-#include "registrar.h"
-#include "util.h"
+namespace fs = std::filesystem;
 
 using namespace std::literals;
