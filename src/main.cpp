@@ -1,9 +1,3 @@
-#include "registrar.h"
-#include "papyrus_impl.h"
-
-
-#include "RE/Skyrim.h"
-#include "SKSE/SKSE.h"
 #include "util.h"
 
 SKSEPluginInfo(
@@ -16,23 +10,16 @@ SKSEPluginInfo(
     .MinimumSKSEVersion = REL::Version{ 0, 0, 0, 0 }
 )
 
-
 SKSEPluginLoad(const SKSE::LoadInterface *skse) {
     bool r = SKSEReg::Init(skse);
-
-    spdlog::info("{} starting", SystemUtil::File::GetPluginName());
 
     return r;
 }
 
 OnQuit([]{
-    spdlog::info("{} shutting down", SystemUtil::File::GetPluginName());
+    logger::info("{} shutting down", SystemUtil::File::GetPluginName());
 })
 
-OnPostLoadGame([]{
-    spdlog::info("{} starting session {}", SystemUtil::File::GetPluginName(), plugin::GetSessionId());
+OnPostLoad([]{
+    logger::info("{} starting", SystemUtil::File::GetPluginName());
 })
-
-OnDeleteGame([]{
-    spdlog::info("{} ending session {}", SystemUtil::File::GetPluginName(), plugin::GetSessionId());
-}) 

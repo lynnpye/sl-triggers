@@ -6,6 +6,6 @@
         "vcpkg-cmake",
         "commonlibsse-ng",
         "nlohmann-json",
-        "caprica"
+        "simpleini"
     ]
 }

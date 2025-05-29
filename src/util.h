@@ -1,5 +1,4 @@
 #pragma once
-#include <ranges>
 
 #define PI 3.1415926535897932f
 #define TWOTHIRDS_PI 2.0943951023931955f
@@ -57,6 +56,12 @@ namespace SystemUtil
 
 		return configs;
 	}
+    
+    static bool IsValidPathComponent(const std::string& input) {
+        // Disallow characters illegal in Windows filenames
+        static const std::regex validPattern(R"(^[^<>:"/\\|?*\x00-\x1F]+$)");
+        return std::regex_match(input, validPattern);
+    }
     };
 }
 
@@ -143,7 +148,79 @@ namespace Util
 			return { range.begin(), range.end() };
 		}
 
+        // Left trim - removes whitespace from the beginning
+        static std::string ltrim(std::string_view str) {
+            auto start = std::find_if_not(str.begin(), str.end(), 
+                                        [](unsigned char ch) { return std::isspace(ch); });
+            return std::string(start, str.end());
+        }
 
+        // Right trim - removes whitespace from the end
+        static std::string rtrim(std::string_view str) {
+            auto end = std::find_if_not(str.rbegin(), str.rend(),
+                                    [](unsigned char ch) { return std::isspace(ch); }).base();
+            return std::string(str.begin(), end);
+        }
+
+        // Full trim - removes whitespace from both ends
+        static std::string trim(std::string_view str) {
+            auto start = std::find_if_not(str.begin(), str.end(),
+                                        [](unsigned char ch) { return std::isspace(ch); });
+            if (start == str.end()) {
+                return std::string{}; // All whitespace
+            }
+            
+            auto end = std::find_if_not(str.rbegin(), str.rend(),
+                                    [](unsigned char ch) { return std::isspace(ch); }).base();
+            return std::string(start, end);
+        }
+
+        // Alternative in-place versions for when you already have a std::string
+        static void ltrim_inplace(std::string& str) {
+            str.erase(str.begin(), 
+                    std::find_if_not(str.begin(), str.end(),
+                                    [](unsigned char ch) { return std::isspace(ch); }));
+        }
+
+        static void rtrim_inplace(std::string& str) {
+            str.erase(std::find_if_not(str.rbegin(), str.rend(),
+                                    [](unsigned char ch) { return std::isspace(ch); }).base(),
+                    str.end());
+        }
+
+        static void trim_inplace(std::string& str) {
+            ltrim_inplace(str);
+            rtrim_inplace(str);
+        }
+
+        static std::optional<std::int32_t> StringToIntWithImplicitHexConversion(const std::string& _hexStr, bool requireHex = false) {
+            const std::string& hexStr = trim(_hexStr);
+            if (hexStr.empty()) {
+                if (requireHex) {
+                    return std::nullopt;
+                } else {
+                    return 0;
+                }
+            }
+            const char* start = hexStr.data();
+            const char* end = hexStr.data() + hexStr.size();
+            int base = 10;
+            
+            if (hexStr.size() >= 2 && hexStr.substr(0, 2) == "0x") {
+                start += 2;
+                base = 16;
+            } else if (requireHex) {
+                return std::nullopt;
+            }
+            
+            std::int32_t result;
+            auto [ptr, ec] = std::from_chars(start, end, result, base);
+            
+            if (ec == std::errc{} && ptr == end) {
+                return result;
+            }
+            return std::nullopt;
+        }
 
         static bool iContains(std::string_view a_str1, std::string_view a_str2)
 		{
@@ -164,6 +241,21 @@ namespace Util
 				return std::toupper(ch1) == std::toupper(ch2);
 			});
 		}
+
+        static bool isTrue(std::string_view a_str)
+        {
+            return iEquals("true", a_str);
+        }
+
+        static bool isFalse(std::string_view a_str)
+        {
+            return iEquals("false", a_str);
+        }
+
+        static bool toBool(std::string_view a_str)
+        {
+            return iEquals("true", a_str);
+        }
 
 		// https://stackoverflow.com/a/35452044
 		static std::string Join(const std::vector<std::string>& a_vec, std::string_view a_delimiter)
@@ -198,6 +290,10 @@ namespace Util
 			return result;
 		}
 
+        template<typename T>
+        static std::string ToHex(T value) {
+            return std::format("0x{:X}", value);
+        }
 
     };
 
@@ -356,7 +452,25 @@ namespace MathUtil
     };
 }
 namespace ObjectUtil
-{
+{   
+    class VoidCallbackFunctor : public RE::BSScript::IStackCallbackFunctor {
+        public:
+            explicit VoidCallbackFunctor(std::function<void()> callback)
+                : onDone(std::move(callback)) {}
+
+            void operator()(RE::BSScript::Variable) override {
+                // This is called when the script function finishes
+                if (onDone) {
+                    onDone();
+                }
+            }
+
+            void SetObject(const RE::BSTSmartPointer<RE::BSScript::Object>&) override {}
+
+        private:
+            std::function<void()> onDone;
+    };
+
     struct Transform
     {
         static void TranslateTo(RE::BSScript::IVirtualMachine *vm, RE::VMStackID stackID, RE::TESObjectREFR *object, float afX, float afY, float afZ, float afAngleX, float afAngleY, float afAngleZ, float afSpeed, float afMaxRotationSpeed)

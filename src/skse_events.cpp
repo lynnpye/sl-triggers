@@ -1,13 +1,12 @@
-#include "registrar.h"
 #include "hooks.h"
 
 #include <spdlog/sinks/basic_file_sink.h>
 
-std::function<void(SKSE::MessagingInterface::Message*)> RegistrationClass::_msgHandler = nullptr;
+std::function<void(SKSE::MessagingInterface::Message*)> SLT::RegistrationClass::_msgHandler = nullptr;
 
-void RegistrationClass::QuitGameHook::hook() {
+void SLT::RegistrationClass::QuitGameHook::hook() {
     {
-        auto& reg = RegistrationClass::GetSingleton();
+        auto& reg = SLT::RegistrationClass::GetSingleton();
         std::lock_guard<std::mutex> lock(reg._mutexQuitters);
         for (auto& cb : reg._quitters) {
             cb();
@@ -16,16 +15,16 @@ void RegistrationClass::QuitGameHook::hook() {
     orig();
 }
 
-void RegistrationClass::QuitGameHook::install() {
-    Hooking::writeCall<RegistrationClass::QuitGameHook>();
+void SLT::RegistrationClass::QuitGameHook::install() {
+    Hooking::writeCall<SLT::RegistrationClass::QuitGameHook>();
 }
 
-std::string RegistrationClass::QuitGameHook::logName = "QuitGame";
-REL::Relocation<decltype(RegistrationClass::QuitGameHook::hook)> RegistrationClass::QuitGameHook::orig;
-REL::RelocationID RegistrationClass::QuitGameHook::srcFunc = REL::RelocationID{35545, 36544};
-uint64_t RegistrationClass::QuitGameHook::srcFuncOffset = REL::Relocate(0x35, 0x1AE);
+std::string SLT::RegistrationClass::QuitGameHook::logName = "QuitGame";
+REL::Relocation<decltype(SLT::RegistrationClass::QuitGameHook::hook)> SLT::RegistrationClass::QuitGameHook::orig;
+REL::RelocationID SLT::RegistrationClass::QuitGameHook::srcFunc = REL::RelocationID{35545, 36544};
+uint64_t SLT::RegistrationClass::QuitGameHook::srcFuncOffset = REL::Relocate(0x35, 0x1AE);
 
-bool RegistrationClass::Init(const SKSE::LoadInterface *skse, std::function<void(SKSE::MessagingInterface::Message*)> msgHandler) {
+bool SLT::RegistrationClass::Init(const SKSE::LoadInterface *skse, std::function<void(SKSE::MessagingInterface::Message*)> msgHandler) {
     if (msgHandler) {
         _msgHandler = std::move(msgHandler);
     }
@@ -43,7 +42,7 @@ bool RegistrationClass::Init(const SKSE::LoadInterface *skse, std::function<void
     SKSE::Init(skse);
 
     ::SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* msg) {
-        auto& reg = RegistrationClass::GetSingleton();
+        auto& reg = SLT::RegistrationClass::GetSingleton();
         std::vector<std::function<void()>> toCall;
         {
             std::lock_guard<std::mutex> lock(reg._mutex);
@@ -54,13 +53,13 @@ bool RegistrationClass::Init(const SKSE::LoadInterface *skse, std::function<void
         for (auto& cb : toCall)
             cb();
 
-        if (RegistrationClass::_msgHandler) {
-            RegistrationClass::_msgHandler(msg);
+        if (SLT::RegistrationClass::_msgHandler) {
+            SLT::RegistrationClass::_msgHandler(msg);
         }
     });
  
     {
-        auto& reg = RegistrationClass::GetSingleton();
+        auto& reg = SLT::RegistrationClass::GetSingleton();
         std::lock_guard<std::mutex> lock(reg._mutexInitters);
         for (auto& cb : reg._initters) {
             cb();
@@ -70,34 +69,34 @@ bool RegistrationClass::Init(const SKSE::LoadInterface *skse, std::function<void
     return true;
 }
 
-RegistrationClass& RegistrationClass::GetSingleton() {
-    static RegistrationClass instance;
+SLT::RegistrationClass& SLT::RegistrationClass::GetSingleton() {
+    static SLT::RegistrationClass instance;
     return instance;
 }
 
-void RegistrationClass::RegisterMessageListener(uint32_t skseMessageType, std::function<void()> cb) {
+void SLT::RegistrationClass::RegisterMessageListener(SKSEMessageType skseMessageType, std::function<void()> cb) {
     std::lock_guard<std::mutex> lock(_mutex);
     _callbacks[skseMessageType].push_back(std::move(cb));
 }
 
-RegistrationClass::AutoRegister::AutoRegister(uint32_t skseMsg, std::function<void()> cb) {
-    RegistrationClass::GetSingleton().RegisterMessageListener(skseMsg, cb);
+SLT::RegistrationClass::AutoRegister::AutoRegister(SKSEMessageType skseMsg, std::function<void()> cb) {
+    SLT::RegistrationClass::GetSingleton().RegisterMessageListener(skseMsg, cb);
 }
 
-void RegistrationClass::RegisterInitter(std::function<void()> cb) {
+void SLT::RegistrationClass::RegisterInitter(std::function<void()> cb) {
     std::lock_guard<std::mutex> lock(_mutexInitters);
     _initters.push_back(std::move(cb));
 }
 
-RegistrationClass::AutoInitter::AutoInitter(std::function<void()> cb) {
-    RegistrationClass::GetSingleton().RegisterInitter(cb);
+SLT::RegistrationClass::AutoInitter::AutoInitter(std::function<void()> cb) {
+    SLT::RegistrationClass::GetSingleton().RegisterInitter(cb);
 }
 
-void RegistrationClass::RegisterQuitter(std::function<void()> cb) {
+void SLT::RegistrationClass::RegisterQuitter(std::function<void()> cb) {
     std::lock_guard<std::mutex> lock(_mutexQuitters);
     _quitters.push_back(std::move(cb));
 }
 
-RegistrationClass::AutoQuitter::AutoQuitter(std::function<void()> cb) {
-    RegistrationClass::GetSingleton().RegisterQuitter(cb);
+SLT::RegistrationClass::AutoQuitter::AutoQuitter(std::function<void()> cb) {
+    SLT::RegistrationClass::GetSingleton().RegisterQuitter(cb);
 }

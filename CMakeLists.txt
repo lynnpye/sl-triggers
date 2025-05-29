@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 4.00 FATAL_ERROR)
 
 # Set your project name. This will be the name of your SKSE .dll file.
 project(sl-triggers VERSION 2.0.0 DESCRIPTION "SL Triggers Redux SKSE Plugin" HOMEPAGE_URL "https://github.com/lynnpye/sl-triggers" LANGUAGES CXX)
+include(GNUInstallDirs)
 
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
 # set(OUTPUT_FOLDER "C:/path/to/any/folder")
@@ -41,7 +42,7 @@ endif()
 # to the path of your "mods" folder
 if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
     set(OUTPUT_FOLDER "$ENV{SKYRIM_MODS_FOLDER}/${PROJECT_NAME} ${CMAKE_BUILD_TYPE}")
-endif()
+endif() 
 
 
 # Setup your SKSE plugin as an SKSE plugin!
@@ -55,17 +56,13 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E remove "${CMAKE_CURRENT_BINARY_DIR}/__${PROJECT_NAME}Plugin.cpp"
 )
 
+find_path(SIMPLEINI_INCLUDE_DIRS "ConvertUTF.c")
+target_include_directories(${PROJECT_NAME} PRIVATE ${SIMPLEINI_INCLUDE_DIRS})
+target_compile_definitions(${PROJECT_NAME} PRIVATE SI_NO_CONVERSION)
+
 set(nlohmann-json_IMPLICIT_CONVERSIONS OFF)
 find_package(nlohmann_json CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE nlohmann_json::nlohmann_json)
-
-find_package(caprica CONFIG REQUIRED)
-target_link_libraries(${PROJECT_NAME} PRIVATE caprica::caprica)
-
-
-#add_library(caprica STATIC IMPORTED)
-#set_target_properties(caprica PROPERTIES STATIC_LIBRARY_OPTIONS "/Lcaprica")
-#target_link_libraries(${PROJECT_NAME} PRIVATE caprica)
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23) # <--- use C++23 standard
 target_precompile_headers(${PROJECT_NAME} PRIVATE src/PCH.h) # <--- PCH.h is required!
@@ -84,7 +81,7 @@ if(DEFINED OUTPUT_FOLDER)
     # Copy the SKSE plugin .dll files into the SKSE/Plugins/ folder
     set(DLL_FOLDER "${OUTPUT_FOLDER}/SKSE/Plugins")
 
-    set (CONFIG_FOLDER "Template_Plugin")
+    set (CONFIG_FOLDER "${PROJECT_NAME}")
     set(SRC_CONFIG_FOLDER "${CMAKE_SOURCE_DIR}/config")
     
     message(STATUS "SKSE plugin output folder: ${DLL_FOLDER}")

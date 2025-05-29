@@ -1,11 +1,10 @@
 set(headers ${headers}
 	src/PCH.h
 	src/bindings.h
-	src/caprica_main.h
 	src/contexting.h
+	src/engine.h
 	src/hooks.h
-	src/papyrus_impl.h
-	src/registrar.h
-	src/scripty.h
+	src/skse_events.h
+	src/sltutil.h
     src/util.h
 )
