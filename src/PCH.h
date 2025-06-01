@@ -10,12 +10,11 @@ namespace fs = std::filesystem;
 #include <functional>
 #include <mutex>
 #include <ranges>
+#include <shared_mutex>
+#include <stdexcept>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
-
-typedef std::uint32_t SKSEMessageType;
-typedef std::int32_t SLTSessionId;
-typedef std::int32_t ThreadContextHandle;
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -25,6 +24,6 @@ typedef std::int32_t ThreadContextHandle;
 #include <SKSE/SKSE.h>
 namespace logger = SKSE::log;
 
+#include "core.h"
 #include "skse_events.h"
 #include "bindings.h"
-#include "util.h"

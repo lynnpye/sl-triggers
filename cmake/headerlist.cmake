@@ -4,7 +4,8 @@ set(headers ${headers}
 	src/contexting.h
 	src/engine.h
 	src/hooks.h
+	src/parsing.h
+	src/questor.h
 	src/skse_events.h
-	src/sltutil.h
     src/util.h
 )

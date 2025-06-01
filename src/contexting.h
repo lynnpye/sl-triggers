@@ -2,14 +2,42 @@
 
 namespace SLT {
 class ContextManager;
-class FrameContext;
 class TargetContext;
 class ThreadContext;
+class FrameContext;
+class CommandLine;
 
 
+#pragma region SLTStackAnalyzer
+class SLTStackAnalyzer {
+public:
+    struct AMEContextInfo {
+        ThreadContextHandle contextId = 0;
+        std::string initialScriptName;
+        RE::ActiveEffect* ame;
+        RE::Actor* target;
+        bool isValid = false;
+    };
+
+    /**
+     *  Consider "digging" back down the stack until we
+     *  find an object that meets the requirements
+     */
+    static AMEContextInfo GetAMEContextInfo(RE::VMStackID stackId);
+
+    static void Walk(RE::VMStackID stackId);
+};
+#pragma endregion
+
+#pragma region ContextManager
 /**
  * ContextManager
  * Tracks all targets with active contexts. Provides host for global variables and state.
+ * 
+ * THREAD SAFETY: Uses single coordination lock for all operations
+ * - ReadData() operations: std::shared_lock on coordinationLock
+ * - WriteData() operations: std::unique_lock on coordinationLock
+ * - Individual context objects have no internal mutexes
  */
 class ContextManager {
 
@@ -24,134 +52,140 @@ public:
         return nextContextId++;
     }
 
-    // Map of formID to target contexts (one per target actor)
-    mutable std::mutex targetContextsMutex;
-    std::unordered_map<RE::FormID, std::unique_ptr<TargetContext>> targetContexts;
+private:
+    // Single coordination lock for all data operations
+    mutable std::shared_mutex coordinationLock;
     
-    mutable std::mutex activeContextsMutex;
+    // Data members (protected by coordinationLock)
+    std::unordered_map<RE::FormID, std::unique_ptr<TargetContext>> targetContexts;
     std::unordered_map<ThreadContextHandle, ThreadContext*> activeContexts;
-
-    mutable std::mutex globalVarsMutex;
     std::map<std::string, std::string> globalVars;
 
-    template <typename Func>
-    TargetContext* WithTargetContexts(Func&& fn) {
-        std::lock_guard<std::mutex> lock(targetContextsMutex);
-        return fn(targetContexts);
-    }
+    // Separate execution control (different concern, different mutex)
+    mutable std::mutex executionControlMutex;
+    bool executionPaused = false;  // Transient - resets to false on load
+    std::string pauseReason;       // Transient - for logging only
 
-    template <typename Func>
-    ThreadContext* WithActiveContexts(Func&& fn) {
-        std::lock_guard<std::mutex> lock(activeContextsMutex);
-        return fn(activeContexts);
-    }
-
-    template <typename Func>
-    std::string WithGlobalVars(Func&& fn) {
-        std::lock_guard<std::mutex> lock(globalVarsMutex);
-        return fn(globalVars);
-    }
-
+public:
     ContextManager() = default;
     static ContextManager& GetSingleton() {
         static ContextManager singleton;
         return singleton;
     }
 
-    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
+    // READ OPERATIONS - Use shared lock, explicit naming
+    template <typename Func>
+    auto ReadData(Func&& fn) const {
+        try {
+            std::shared_lock<std::shared_mutex> lock(coordinationLock);
+            return fn(targetContexts, activeContexts, globalVars, nextContextId);
+        } catch (...) {
+            throw;
+        }
+    }
+    
+    // WRITE OPERATIONS - Use exclusive lock, explicit naming
+    template <typename Func>
+    auto WriteData(Func&& fn) {
+        try {
+            std::unique_lock<std::shared_mutex> lock(coordinationLock);
+            return fn(targetContexts, activeContexts, globalVars, nextContextId);
+        } catch (...) {
+            throw;
+        }
+    }
 
-    bool Deserialize(SKSE::SerializationInterface* a_intfc);
+    // Execution control operations (separate mutex)
+    bool ShouldContinueExecution() const {
+        std::lock_guard<std::mutex> lock(executionControlMutex);
+        return !executionPaused;
+    }
+    
+    void PauseExecution(const std::string& reason) {
+        std::lock_guard<std::mutex> lock(executionControlMutex);
+        if (!executionPaused) {
+            logger::info("Pausing script execution: {}", reason);
+            executionPaused = true;
+            pauseReason = reason;
+        }
+    }
+    
+    void ResumeExecution() {
+        std::lock_guard<std::mutex> lock(executionControlMutex);
+        if (executionPaused) {
+            logger::info("Resuming script execution after: {}", pauseReason);
+            executionPaused = false;
+            pauseReason.clear();
+        }
+    }
 
+    // Convenience methods using the functors
     TargetContext* CreateTargetContext(RE::TESForm* target) {
-        if (target == nullptr)
-            return nullptr;
+        if (!target) target = RE::PlayerCharacter::GetSingleton();
+        
+        return WriteData([target](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) -> TargetContext* {
+            RE::FormID targetId = target->GetFormID();
             
-        return WithTargetContexts([&tgt = target](auto& contexts) {
-            if (!tgt) {
-                tgt = RE::PlayerCharacter::GetSingleton();
-            }
-            RE::FormID targetId = tgt->GetFormID();
-
-            TargetContext* theTargetContext;
-            auto tcit = contexts.find(targetId);
-            if (tcit == contexts.end()) {
-                auto [newIt, inserted] = contexts.emplace(targetId, std::make_unique<TargetContext>(tgt));
+            auto it = targetContexts.find(targetId);
+            if (it == targetContexts.end()) {
+                auto [newIt, inserted] = targetContexts.emplace(targetId, std::make_unique<TargetContext>(target));
                 return newIt->second.get();
             } else {
-                return tcit->second.get();
+                return it->second.get();
             }
         });
     }
 
-    TargetContext* GetTargetContext(RE::TESForm* target) {
-        if (target == nullptr)
-            return nullptr;
+    TargetContext* GetTargetContext(RE::TESForm* target) const {
+        if (!target) target = RE::PlayerCharacter::GetSingleton();
+        
+        return ReadData([target](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> TargetContext* {
+            RE::FormID targetId = target->GetFormID();
             
-        logger::info("WithTargetContexts get target context for target form");
-        logger::info("formID :{}:", target->GetFormID());
-        return WithTargetContexts([&tgt = target](auto& contexts) -> TargetContext* {
-            if (!tgt) {
-                tgt = RE::PlayerCharacter::GetSingleton();
-            }
-            RE::FormID targetId = tgt->GetFormID();
-
-            TargetContext* theTargetContext;
-            auto tcit = contexts.find(targetId);
-            if (tcit != contexts.end()) {
-                return tcit->second.get();
-            } else {
-                return nullptr;
-            }
+            auto it = targetContexts.find(targetId);
+            return (it != targetContexts.end()) ? it->second.get() : nullptr;
         });
     }
 
-    std::string SetGlobalVar(std::string name, std::string value) {
-        return WithGlobalVars([&nm = name, &val = value](auto& vars){
-            vars[nm] = val;
-            return val;
+    std::string SetGlobalVar(std::string_view name, std::string_view value);
+    std::string GetGlobalVar(std::string_view name) const;
+
+    ThreadContextHandle StartSLTScript(RE::Actor* target, std::string_view initialScriptName);
+
+    ThreadContext* GetContext(ThreadContextHandle contextId) const {
+        return ReadData([contextId](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> ThreadContext* {
+            auto it = activeContexts.find(contextId);
+            return (it != activeContexts.end()) ? it->second : nullptr;
         });
-    }
-
-    std::string GetGlobalVar(std::string name) {
-        return WithGlobalVars([&nm = name](auto& vars){
-            if (vars.contains(nm)) {
-                return vars[nm];
-            } else {
-                return std::string("");
-            }
-        });
-    }
-
-    ThreadContextHandle StartSLTScript(RE::Actor* target, const std::string& scriptName);
-
-    ThreadContext* GetContext(ThreadContextHandle contextId) {
-        std::lock_guard<std::mutex> lock(activeContextsMutex);
-        auto it = activeContexts.find(contextId);
-        return (it != activeContexts.end()) ? it->second : nullptr;
     }
     
     void CleanupContext(ThreadContextHandle contextId) {
-        {
-            std::lock_guard<std::mutex> lock(activeContextsMutex);
+        WriteData([contextId](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
             activeContexts.erase(contextId);
-        }
+            return nullptr;
+        });
         
         logger::info("Cleaned up SLT context ID: {}", contextId);
     }
 
     void CleanupAllContexts() {
-        {
-            std::lock_guard<std::mutex> lock(activeContextsMutex);
+        WriteData([](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
             activeContexts.clear();
-        }
+            targetContexts.clear();
+            return nullptr;
+        });
         
         logger::info("Cleaned up all SLT contexts");
     }
     
     std::size_t GetActiveContextCount() const {
-        std::lock_guard<std::mutex> lock(activeContextsMutex);
-        return activeContexts.size();
+        return ReadData([](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) {
+            return activeContexts.size();
+        });
     }
+
+    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
+    bool Deserialize(SKSE::SerializationInterface* a_intfc);
 
 private:
     ContextManager(const ContextManager&) = delete;
@@ -159,11 +193,15 @@ private:
     ContextManager(ContextManager&&) = delete;
     ContextManager& operator=(ContextManager&&) = delete;
 };
+#pragma endregion
 
+#pragma region TargetContext
 /**
  * TargetContext
  * One per target (Actor). Tracks all of the threads (e.g. execution contexts, i.e. how many times did someone request a script be run on this Actor).
  * Provides host for target-specific variables and state.
+ * 
+ * THREAD SAFETY: No internal mutexes - all coordination handled by ContextManager
  */
 class TargetContext {
 public:
@@ -179,78 +217,57 @@ public:
     RE::FormID tesTargetFormID;
     RE::TESForm* tesTarget;
 
-    //mutable std::mutex threadsMutex;
     std::vector<std::unique_ptr<ThreadContext>> threads;
-
-    mutable std::mutex targetVarsMutex;
     std::map<std::string, std::string> targetVars;
 
-    // template <typename Func>
-    // ThreadContext* xWithThreads(Func&& fn) {
-    //     std::lock_guard<std::mutex> lock(threadsMutex);
-    //     return fn(threads);
-    // }
-
-    template <typename Func>
-    std::string WithTargetVars(Func&& fn) {
-        std::lock_guard<std::mutex> lock(targetVarsMutex);
-        return fn(targetVars);
+    RE::Actor* AsActor() const {
+        return tesTarget ? tesTarget->As<RE::Actor>() : nullptr;
     }
-    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
     
+    std::string SetTargetVar(std::string_view name, std::string_view value) {
+        if (name.empty()) {
+            logger::warn("SetTargetVar: Variable name cannot be empty");
+            return "";
+        }
+        
+        return ContextManager::GetSingleton().WriteData([this, name = std::string(name), value = std::string(value)](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+            auto result = this->targetVars.emplace(name, value);
+            if (!result.second) {
+                result.first->second = value; // Update existing
+            }
+            return result.first->second;
+        });
+    }
+
+    std::string GetTargetVar(std::string_view name) const {
+        if (name.empty()) {
+            return "";
+        }
+        
+        return ContextManager::GetSingleton().ReadData([this, name = std::string(name)](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) {
+            auto it = this->targetVars.find(name);
+            return (it != this->targetVars.end()) ? it->second : std::string{};
+        });
+    }
+
+    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
     bool Deserialize(SKSE::SerializationInterface* a_intfc);
 
-    std::string SetTargetVar(std::string name, std::string value) {
-        return WithTargetVars([&nm = name, &val = value](auto& vars){
-            vars[nm] = val;
-            return val;
-        });
-    }
-
-    std::string GetTargetVar(std::string name) {
-        return WithTargetVars([&nm = name](auto& vars){
-            if (vars.contains(nm)) {
-                return vars[nm];
-            } else {
-                return std::string("");
-            }
-        });
-    }
-
-    void RemoveThreadContext(ThreadContext* threadContextToRemove) {
-        if (threadContextToRemove == nullptr)
-            return;
-        
-        std::ignore = ContextManager::GetSingleton().WithActiveContexts([self=this, threadContextToRemove](auto& activeContexts){
-            auto it = std::find_if(self->threads.begin(), self->threads.end(), 
-                [threadContextToRemove](const std::unique_ptr<ThreadContext>& uptr) {
-                    return uptr.get() == threadContextToRemove;
-                });
-
-            if (it != self->threads.end()) {
-                ThreadContextHandle handle = it->get()->threadContextHandle;
-                auto activeIt = std::find_if(activeContexts.begin(), activeContexts.end(),
-                    [handle](const auto& pair) {
-                        return pair.first == handle;
-                    });
-                if (activeIt != activeContexts.end()) {
-                    activeContexts.erase(activeIt);
-                }
-                self->threads.erase(it);
-            }
-            return nullptr;
-        });
-    }
+    void RemoveThreadContext(ThreadContext* threadContextToRemove);
 };
+#pragma endregion
 
+#pragma region ThreadContext
 /**
  * ThreadContext
  * One per script request sent to SLT. Tracks the stack of FrameContexts for this thread.
  * A ThreadContext is not associated with an actual C++ thread, but rather tracking the path of execution for a singular request on a target.
+ * 
+ * THREAD SAFETY: No internal mutexes - all coordination handled by ContextManager
  */
 class ThreadContext {
 public:
-    explicit ThreadContext(TargetContext* target, std::string _initialScriptName)
+    explicit ThreadContext(TargetContext* target, std::string_view _initialScriptName)
         : target(target), initialScriptName(_initialScriptName), isClaimed(false), wasClaimed(false) {
         threadContextHandle = ContextManager::GetNextContextId();
         PushFrameContext(_initialScriptName);
@@ -261,145 +278,194 @@ public:
     ThreadContextHandle threadContextHandle;
     std::string initialScriptName;
 
-    mutable std::mutex callStackMutex;
     std::vector<std::unique_ptr<FrameContext>> callStack;
-
-    mutable std::mutex threadVarsMutex;
     std::map<std::string, std::string> threadVars;
 
-    // theoretically, if an executor wakes up and wants to run something
-    // we could let it look for any job that isn't claimed and has never been
-    // then, if it couldn't find any, it could be allowed to run a job that
-    // is not claimed but had been during a previous save
+    // Transient execution state (not serialized)
     bool isClaimed; // do not serialize/deserialize, resets on game reload
     bool wasClaimed; // serialize/deserialize
 
-    bool IsTargetValid() {
+    bool IsTargetValid() const {
         return target && target->tesTarget;
     }
 
-    template <typename Func>
-    FrameContext* WithCallStack(Func&& fn) {
-        std::lock_guard<std::mutex> lock(callStackMutex);
-        return fn(callStack);
+    std::string SetThreadVar(std::string_view name, std::string_view value) {
+        if (name.empty()) {
+            logger::warn("SetThreadVar: Variable name cannot be empty");
+            return "";
+        }
+        
+        return ContextManager::GetSingleton().WriteData([this, name = std::string(name), value = std::string(value)](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+            auto result = this->threadVars.emplace(name, value);
+            if (!result.second) {
+                result.first->second = value; // Update existing
+            }
+            return result.first->second;
+        });
     }
 
-    template <typename Func>
-    std::string WithThreadVars(Func&& fn) {
-        std::lock_guard<std::mutex> lock(threadVarsMutex);
-        return fn(threadVars);
+    std::string GetThreadVar(std::string_view name) const {
+        if (name.empty()) {
+            return "";
+        }
+        
+        return ContextManager::GetSingleton().ReadData([this, name = std::string(name)](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) {
+            auto it = this->threadVars.find(name);
+            return (it != this->threadVars.end()) ? it->second : std::string{};
+        });
     }
 
     bool Serialize(SKSE::SerializationInterface* a_intfc) const;
-
     bool Deserialize(SKSE::SerializationInterface* a_intfc, TargetContext* targetContext); 
 
-    std::string SetThreadVar(std::string name, std::string value) {
-        return WithThreadVars([&nm = name, &val = value](auto& vars){
-            vars[nm] = val;
-            return val;
-        });
-    }
-
-    std::string GetThreadVar(std::string name) {
-        return WithThreadVars([&nm = name](auto& vars){
-            if (vars.contains(nm)) {
-                return vars[nm];
-            } else {
-                return std::string("");
-            }
-        });
-    }
-
-    FrameContext* PushFrameContext(std::string initialScriptName) {
-        if (initialScriptName.empty())
-            return nullptr;
-        
-        return WithCallStack([papa = this, initialScriptName](auto& callStack){
-            auto newPtr = std::make_unique<FrameContext>(papa, initialScriptName);
-            FrameContext* newContext = newPtr.get();
-            callStack.push_back(std::move(newPtr));
-            return newContext;
-        });
-    }
-
-    bool ExecuteNextStep();
+    FrameContext* PushFrameContext(std::string_view initialScriptName);
+    bool PopFrameContext();
+    bool ExecuteNextStep(SLTStackAnalyzer::AMEContextInfo& contextInfo);
 };
+#pragma endregion
 
+#pragma region FrameContext
 /**
  * FrameContext
  * Tracks local variables and state for the currently executing SLT script.
+ * 
+ * THREAD SAFETY: No internal mutexes - all coordination handled by ContextManager
  */
-
-enum ScriptType {
-    INI,
-    JSON,
-
-
-    END
-};
-
 class FrameContext {
 public:
-    explicit FrameContext(ThreadContext* thread, std::string scriptName) : thread(thread), scriptName(scriptName), currentLine(0), iterActor(nullptr), lastKey(0), iterActorFormID(0) {}
+    FrameContext() = default;
+
+    explicit FrameContext(ThreadContext* thread, std::string_view scriptName)
+        : thread(thread), scriptName(scriptName), currentLine(0), iterActor(nullptr),
+            lastKey(0), iterActorFormID(0), isReadied(false), isReady(false) {
+        if (!ParseScript()) {
+            std::string errorMsg = "Unable to parse script '" + std::string(scriptName) + "'";
+            throw std::logic_error(errorMsg);
+        }
+    }
+
+    bool ParseScript();
 
     ThreadContext* thread;
     std::string scriptName;
 
-    std::vector<std::vector<std::string>> scriptTokens;
+    bool isReady;
+    bool isReadied;
+    std::vector<std::unique_ptr<CommandLine>> scriptTokens;
     std::size_t currentLine;
-    // "ini" or "json" or similar
-    // this should be an enum
     ScriptType commandType;
-    // arguments sent to this script when it was invoked via "call"; empty if none provided or the root script
     std::vector<std::string> callArgs;
     std::map<std::string, std::size_t> gotoLabelMap;
     std::map<std::string, std::size_t> gosubLabelMap;
     std::vector<std::size_t> returnStack;
     std::string mostRecentResult;
     std::uint32_t lastKey;
-    // Serialize as formID
-    RE::FormID iterActorFormID;
+    RE::FormID iterActorFormID; // Serialize as formID
     RE::Actor* iterActor;
 
-    mutable std::mutex localVarsMutex;
     std::map<std::string, std::string> localVars;
+    
+    std::string SetLocalVar(std::string_view name, std::string_view value) {
+        if (name.empty()) {
+            LogWarn("SetLocalVar: Variable name cannot be empty");
+            return "";
+        }
+        
+        return ContextManager::GetSingleton().WriteData([this, name = std::string(name), value = std::string(value)](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+            auto result = this->localVars.emplace(name, value);
+            if (!result.second) {
+                result.first->second = value; // Update existing
+            }
+            return result.first->second;
+        });
+    }
 
-    template <typename Func>
-    std::string WithLocalVars(Func&& fn) {
-        std::lock_guard<std::mutex> lock(localVarsMutex);
-        return fn(localVars);
+    std::string GetLocalVar(std::string_view name) const {
+        if (name.empty()) {
+            return "";
+        }
+        
+        return ContextManager::GetSingleton().ReadData([this, name = std::string(name)](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) {
+            auto it = this->localVars.find(name);
+            return (it != this->localVars.end()) ? it->second : std::string{};
+        });
     }
     
     bool Serialize(SKSE::SerializationInterface* a_intfc) const;
-    
     bool Deserialize(SKSE::SerializationInterface* a_intfc);
-
-    std::string SetLocalVar(std::string name, std::string value) {
-        return WithLocalVars([&nm = name, &val = value](auto& vars){
-            vars[nm] = val;
-            return val;
-        });
+    
+    template<typename... Args>
+    void Log(spdlog::level::level_enum level, std::format_string<Args...> fmt, Args&&... args) {
+        std::string message = std::format(fmt, std::forward<Args>(args)...);
+        std::string prefixed = std::format("{}:{} - {}", scriptName, currentLine + 1, message);
+        
+        switch (level) {
+            case spdlog::level::info:
+                logger::info("{}", prefixed);
+                break;
+            case spdlog::level::warn:
+                logger::warn("{}", prefixed);
+                break;
+            case spdlog::level::err:
+                logger::error("{}", prefixed);
+                break;
+            case spdlog::level::debug:
+                logger::debug("{}", prefixed);
+                break;
+            default:
+                logger::info("{}", prefixed);
+                break;
+        }
+    }
+    
+    // Convenience wrappers
+    template<typename... Args>
+    void LogInfo(std::format_string<Args...> fmt, Args&&... args) {
+        Log(spdlog::level::info, fmt, std::forward<Args>(args)...);
+    }
+    
+    template<typename... Args>
+    void LogWarn(std::format_string<Args...> fmt, Args&&... args) {
+        Log(spdlog::level::warn, fmt, std::forward<Args>(args)...);
+    }
+    
+    template<typename... Args>
+    void LogError(std::format_string<Args...> fmt, Args&&... args) {
+        Log(spdlog::level::err, fmt, std::forward<Args>(args)...);
     }
 
-    std::string GetLocalVar(std::string name) {
-        return WithLocalVars([&nm = name](auto& vars){
-            if (vars.contains(nm)) {
-                return vars[nm];
-            } else {
-                return std::string("");
-            }
-        });
+    template<typename... Args>
+    void LogDebug(std::format_string<Args...> fmt, Args&&... args) {
+        Log(spdlog::level::debug, fmt, std::forward<Args>(args)...);
     }
-
-    // The presumption is that the file has been parsed and tokenized into scriptTokens before either of these functions is called
-    bool ParseScript();
 
     // returns true if RunStep() can do something (i.e. this framecontext has an op ready to run); false if nothing else to do
-    bool HasStep();
+    bool IsReady();
 
     // returns false when the FrameContext has nothing else to run
-    bool RunStep();
+    bool RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo);
 };
+#pragma endregion
 
+#pragma region CommandLine
+/**
+ * CommandLine
+ * "You know what the chain of command is? It's the ruttin' chain I beat you over the head with until you understand I'm in command!"
+ *  - a famous space mercenary
+ */
+class CommandLine {
+public: // I know, I know
+
+    CommandLine() = default;
+
+    explicit CommandLine(std::size_t _lineNumber, std::vector<std::string> _tokens)
+        : lineNumber(_lineNumber), tokens(_tokens) {}
+
+    std::size_t lineNumber;
+    std::vector<std::string> tokens;
+    
+    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
+    bool Deserialize(SKSE::SerializationInterface* a_intfc);
+};
+#pragma endregion
 }

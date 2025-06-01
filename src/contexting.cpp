@@ -17,7 +17,7 @@ public:
         mgefPool.clear();
 
         int highWaterMark = 0;
-        std::string_view lastSpellId;
+        std::string lastSpellId;
         
         for (int i = 1; i <= 99; ++i) {
             std::string spellId = "slt_cmds" + std::to_string(i).insert(0, 2 - std::to_string(i).length(), '0');
@@ -79,7 +79,7 @@ public:
         return nullptr;
     }
     
-    bool ApplyScript(RE::Actor* target, const std::string& scriptName);
+    bool ApplyScript(RE::Actor* target, std::string_view scriptName);
 
 private:
     std::vector<RE::SpellItem*> spellPool;
@@ -94,7 +94,7 @@ OnDataLoaded([]{
     ScriptPoolManager::GetSingleton().InitializePool();
 });
 
-bool ScriptPoolManager::ApplyScript(RE::Actor* target, const std::string& scriptName) {
+bool ScriptPoolManager::ApplyScript(RE::Actor* target, std::string_view scriptName) {
     if (!target) {
         logger::error("Invalid caster or target for script application");
         return false;
@@ -140,7 +140,6 @@ bool ScriptPoolManager::ApplyScript(RE::Actor* target, const std::string& script
 #pragma endregion
 
 #pragma region SerializationHelper
-
 
 template<typename T>
 bool WriteData(SKSE::SerializationInterface* a_intfc, const T& data) {
@@ -346,32 +345,6 @@ public:
         }
         return true;
     }
-
-    static bool WriteTokenizedScript(SKSE::SerializationInterface* a_intfc,
-                                   const std::vector<std::vector<std::string>>& tokens) {
-        std::size_t rowCount = tokens.size();
-        if (!WriteData(a_intfc, rowCount)) return false;
-        
-        for (const auto& row : tokens) {
-            if (!WriteStringVector(a_intfc, row)) return false;
-        }
-        return true;
-    }
-
-    static bool ReadTokenizedScript(SKSE::SerializationInterface* a_intfc,
-                                  std::vector<std::vector<std::string>>& tokens) {
-        std::size_t rowCount;
-        if (!ReadData(a_intfc, rowCount)) return false;
-        
-        tokens.clear();
-        tokens.reserve(rowCount);
-        for (std::size_t i = 0; i < rowCount; ++i) {
-            std::vector<std::string> row;
-            if (!ReadStringVector(a_intfc, row)) return false;
-            tokens.push_back(std::move(row));
-        }
-        return true;
-    }
 };
 #pragma endregion
 
@@ -384,97 +357,99 @@ OnAfterSKSEInit([]{
     g_ContextManager = &ContextManager::GetSingleton();
 });
 
-ThreadContextHandle ContextManager::StartSLTScript(RE::Actor* target, const std::string& initialScriptName) {
+
+ThreadContextHandle ContextManager::StartSLTScript(RE::Actor* target, std::string_view initialScriptName) {
     if (!target || initialScriptName.empty()) return 0;
 
+    ThreadContextHandle handle = 0;
     try {
-        // Get ContextManager and create through existing system
-        auto& contextManager = ContextManager::GetSingleton();
+        // Use WriteData to modify contexts
+        handle = WriteData([target, initialScriptName](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) -> ThreadContextHandle {
+            // Get or create target context
+            RE::FormID targetId = target->GetFormID();
+            TargetContext* targetContext = nullptr;
+            
+            auto tcit = targetContexts.find(targetId);
+            if (tcit == targetContexts.end()) {
+                auto [newIt, inserted] = targetContexts.emplace(targetId, std::make_unique<TargetContext>(target));
+                targetContext = newIt->second.get();
+            } else {
+                targetContext = tcit->second.get();
+            }
 
-        TargetContext* targetContext = GetTargetContext(target);
-
-        if (!targetContext) {
-            targetContext = CreateTargetContext(target);
-        }
-
-        ThreadContext* context = ContextManager::GetSingleton().WithActiveContexts(
-        [target, targetContext, &initialScriptName](auto& activeContexts){
+            // Create new thread context
             auto newPtr = std::make_unique<ThreadContext>(targetContext, initialScriptName);
             ThreadContext* rawPtr = newPtr.get();
+            ThreadContextHandle handle = rawPtr->threadContextHandle;
+            
             targetContext->threads.push_back(std::move(newPtr));
-
-            activeContexts[rawPtr->threadContextHandle] = rawPtr;
-            return rawPtr;
+            activeContexts[handle] = rawPtr;
+            
+            return handle;
         });
-        
-        if (!context) {
-            logger::error("Failed to create ThreadContext for script: {}", initialScriptName);
-            return 0;
-        }
 
-        if (!ScriptPoolManager::GetSingleton().ApplyScript(target, initialScriptName)) {
-            logger::error("Unable to apply script({}) to target ({})", initialScriptName, Util::String::ToHex(target->GetFormID()));
-            return 0;
+        if (handle) {
+            if (!ScriptPoolManager::GetSingleton().ApplyScript(target, initialScriptName)) {
+                logger::error("Unable to apply script({}) to target ({})", initialScriptName, Util::String::ToHex(target->GetFormID()));
+                return 0;
+            }
         }
-        return context->threadContextHandle;
     } catch (const std::exception& e) {
         logger::error("Exception in StartSLTScript: {}", e.what());
     } catch (...) {
         logger::error("Unknown exception in StartSLTScript");
     }
+    
     return 0;
 }
 
 bool ContextManager::Serialize(SKSE::SerializationInterface* a_intfc) const {
     using SH = SerializationHelper;
 
-    if (!SH::WriteData(a_intfc, nextContextId)) return false;
-    
-    // Write global variables
-    {
-        std::lock_guard<std::mutex> lock(globalVarsMutex);
+    // Create a consistent snapshot using ReadData
+    return ReadData([a_intfc](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) {
+        using SH = SerializationHelper;
+        
+        if (!SH::WriteData(a_intfc, nextId)) return false;
+        
+        // Write global variables
         if (!SH::WriteStringMap(a_intfc, globalVars)) return false;
-    }
-    
-    // Write target contexts
-    {
-        std::lock_guard<std::mutex> lock(targetContextsMutex);
+        
+        // Write target contexts
         std::size_t contextCount = targetContexts.size();
         if (!SH::WriteData(a_intfc, contextCount)) return false;
         
         for (const auto& [formID, targetContext] : targetContexts) {
             if (!targetContext->Serialize(a_intfc)) return false;
         }
-    }
-    
-    std::lock_guard<std::mutex> lock(activeContextsMutex);
-    std::size_t contextCount = activeContexts.size();
-    if (!SH::WriteData(a_intfc, contextCount)) return false;
-    
-    for (const auto& [contextId, threadContext] : activeContexts) {
-        if (!SH::WriteData(a_intfc, contextId)) return false;
         
-        RE::FormID targetFormID = threadContext->target->tesTargetFormID;
-        if (!SH::WriteData(a_intfc, targetFormID)) return false;
-    }
-    
-    return true;
+        // Write active context mappings
+        std::size_t activeCount = activeContexts.size();
+        if (!SH::WriteData(a_intfc, activeCount)) return false;
+        
+        for (const auto& [contextId, threadContext] : activeContexts) {
+            if (!SH::WriteData(a_intfc, contextId)) return false;
+            
+            RE::FormID targetFormID = threadContext->target->tesTargetFormID;
+            if (!SH::WriteData(a_intfc, targetFormID)) return false;
+        }
+        
+        return true;
+    });
 }
 
 bool ContextManager::Deserialize(SKSE::SerializationInterface* a_intfc) {
     using SH = SerializationHelper;
 
-    if (!SH::ReadData(a_intfc, nextContextId)) return false;
-    
-    // Read global variables
-    {
-        std::lock_guard<std::mutex> lock(globalVarsMutex);
+    return WriteData([a_intfc](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+        using SH = SerializationHelper;
+        
+        if (!SH::ReadData(a_intfc, nextId)) return false;
+        
+        // Read global variables
         if (!SH::ReadStringMap(a_intfc, globalVars)) return false;
-    }
-    
-    // Read target contexts
-    {
-        std::lock_guard<std::mutex> lock(targetContextsMutex);
+        
+        // Read target contexts
         targetContexts.clear();
         
         std::size_t contextCount;
@@ -489,24 +464,46 @@ bool ContextManager::Deserialize(SKSE::SerializationInterface* a_intfc) {
                 targetContexts[targetContext->tesTargetFormID] = std::move(targetContext);
             }
         }
-    }
 
-    {
-        std::ignore = WithActiveContexts([self=this](auto& activeContexts){
-            std::ignore = self->WithTargetContexts([&activeContexts](auto& targetContexts){
-                for (auto& [formId, targetContext] : targetContexts) {
-                    for (auto& threadContext : targetContext->threads) {
-                        activeContexts[threadContext->threadContextHandle] = threadContext.get();
-                    }
-                }
-                return nullptr;
-            });
-            return nullptr;
-        });
+        // Rebuild active contexts map
+        activeContexts.clear();
+        for (auto& [formId, targetContext] : targetContexts) {
+            for (auto& threadContext : targetContext->threads) {
+                activeContexts[threadContext->threadContextHandle] = threadContext.get();
+            }
+        }
+        
+        return true;
+    });
+}
+
+// Global Variable Accessors (keep existing validation)
+std::string ContextManager::SetGlobalVar(std::string_view name, std::string_view value) {
+    if (name.empty()) {
+        logger::warn("SetGlobalVar: Variable name cannot be empty");
+        return "";
     }
     
-    return true;
+    return WriteData([name = std::string(name), value = std::string(value)](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+        auto result = globalVars.emplace(name, value);
+        if (!result.second) {
+            result.first->second = value; // Update existing
+        }
+        return result.first->second;
+    });
 }
+
+std::string ContextManager::GetGlobalVar(std::string_view name) const {
+    if (name.empty()) {
+        return "";
+    }
+    
+    return ReadData([name = std::string(name)](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) {
+        auto it = globalVars.find(name);
+        return (it != globalVars.end()) ? it->second : std::string{};
+    });
+}
+
 #pragma endregion
 
 #pragma region TargetContext
@@ -517,7 +514,6 @@ bool TargetContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     if (!SH::WriteData(a_intfc, tesTargetFormID)) return false;
     
     // Write threads
-    std::lock_guard<std::mutex> lock(ContextManager::GetSingleton().activeContextsMutex);
     std::size_t threadCount = threads.size();
     if (!SH::WriteData(a_intfc, threadCount)) return false;
     
@@ -526,7 +522,6 @@ bool TargetContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     }
     
     // Write target variables
-    std::lock_guard<std::mutex> varLock(targetVarsMutex);
     if (!SH::WriteStringMap(a_intfc, targetVars)) return false;
     
     return true;
@@ -555,7 +550,6 @@ bool TargetContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     std::size_t threadCount;
     if (!SH::ReadData(a_intfc, threadCount)) return false;
     
-    std::lock_guard<std::mutex> lock(ContextManager::GetSingleton().activeContextsMutex);
     threads.clear();
     threads.reserve(threadCount);
     
@@ -566,29 +560,83 @@ bool TargetContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     }
     
     // Read target variables
-    std::size_t varCount;
-    if (!SH::ReadData(a_intfc, threadCount)) return false;
-    
-    std::lock_guard<std::mutex> varLock(targetVarsMutex);
     if (!SH::ReadStringMap(a_intfc, targetVars)) return false;
     
     return true;
+}
+
+void TargetContext::RemoveThreadContext(ThreadContext* threadContextToRemove) {
+    if (threadContextToRemove == nullptr)
+        return;
+    
+    // Use ContextManager to safely modify both collections
+    ContextManager::GetSingleton().WriteData([this, threadContextToRemove](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+        auto it = std::find_if(threads.begin(), threads.end(), 
+            [threadContextToRemove](const std::unique_ptr<ThreadContext>& uptr) {
+                return uptr.get() == threadContextToRemove;
+            });
+
+        if (it != threads.end()) {
+            ThreadContextHandle handle = it->get()->threadContextHandle;
+            auto activeIt = activeContexts.find(handle);
+            if (activeIt != activeContexts.end()) {
+                activeContexts.erase(activeIt);
+            }
+            threads.erase(it);
+        }
+        return nullptr;
+    });
 }
 
 #pragma endregion
 
 #pragma region ThreadContext
 
+FrameContext* ThreadContext::PushFrameContext(std::string_view initialScriptName) {
+    if (initialScriptName.empty())
+        return nullptr;
+    
+    try {
+        callStack.push_back(std::make_unique<FrameContext>(this, initialScriptName));
+        return callStack.back().get();
+    } catch (...) {
+        return nullptr;
+    }
+}
+
+bool ThreadContext::PopFrameContext() {
+    if (callStack.size() < 1)
+        return false;
+
+    try {
+        if (callStack.size() > 0)
+            callStack.pop_back();
+
+        if (callStack.size() < 1)
+            return false;
+        
+        auto* previousFrame = callStack.back().get();
+        while (previousFrame && !previousFrame->IsReady()) {
+            callStack.pop_back();
+            if (callStack.size() < 1)
+                return false;
+            previousFrame = callStack.back().get();
+        }
+        
+        return previousFrame && previousFrame->IsReady();
+    } catch (...) {
+        return false;
+    }
+}
+
 bool ThreadContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     using SH = SerializationHelper;
 
     if (!SH::WriteData(a_intfc, wasClaimed)) return false;
-
     if (!SH::WriteData(a_intfc, threadContextHandle)) return false;
-    if (!SH::WriteData(a_intfc, initialScriptName)) return false;
+    if (!SH::WriteString(a_intfc, initialScriptName)) return false;
     
     // Write call stack
-    std::lock_guard<std::mutex> lock(callStackMutex);
     std::size_t stackSize = callStack.size();
     if (!SH::WriteData(a_intfc, stackSize)) return false;
     
@@ -597,7 +645,6 @@ bool ThreadContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     }
     
     // Write thread variables
-    std::lock_guard<std::mutex> varLock(threadVarsMutex);
     if (!SH::WriteStringMap(a_intfc, threadVars)) return false;
     
     return true;
@@ -608,50 +655,87 @@ bool ThreadContext::Deserialize(SKSE::SerializationInterface* a_intfc, TargetCon
 
     isClaimed = false;
     if (!SH::ReadData(a_intfc, wasClaimed)) return false;
-
     if (!SH::ReadData(a_intfc, threadContextHandle)) return false;
-    if (!SH::ReadData(a_intfc, initialScriptName)) return false;
+    if (!SH::ReadString(a_intfc, initialScriptName)) return false;
     
     // Read call stack
     std::size_t stackSize;
     if (!SH::ReadData(a_intfc, stackSize)) return false;
     
-    std::lock_guard<std::mutex> lock(callStackMutex);
     callStack.clear();
     callStack.reserve(stackSize);
     
     for (std::size_t i = 0; i < stackSize; ++i) {
-        auto frame = std::make_unique<FrameContext>(this, "");
+        callStack.push_back(std::make_unique<FrameContext>());
+        auto frame = callStack.back().get();
         if (!frame->Deserialize(a_intfc)) return false;
-        callStack.push_back(std::move(frame));
+        frame->thread = this; // Restore thread pointer
     }
     
     // Restore target pointer
     target = targetContext;
     
     // Read thread variables
-    std::lock_guard<std::mutex> varLock(threadVarsMutex);
     if (!SH::ReadStringMap(a_intfc, threadVars)) return false;
     
     return true;
 }
 
-// one ping only vasily
-bool ThreadContext::ExecuteNextStep() {
-    return (WithCallStack([](auto& callStack) -> FrameContext* {
-        if (callStack.empty())
-            return nullptr;
+bool ThreadContext::ExecuteNextStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
+    if (callStack.empty())
+        return false;
 
-        auto* currentFrame = callStack.back().get();
-        if (currentFrame && currentFrame->HasStep())
-            return currentFrame->RunStep() ? currentFrame : nullptr;
-        
-        return nullptr;
-    }) != nullptr);
+    FrameContext* currentFrame = callStack.back().get();
+    while (currentFrame && !currentFrame->IsReady()) {
+        callStack.pop_back();
+        if (callStack.size() > 0)
+            currentFrame = callStack.back().get();
+        else
+            currentFrame = nullptr;
+    }
+    
+    if (currentFrame && currentFrame->IsReady()) {
+        return currentFrame->RunStep(contextInfo);
+    }
+    
+    return false;
 }
 #pragma endregion
 
 #pragma region FrameContext
+bool CommandLine::Serialize(SKSE::SerializationInterface* a_intfc) const {
+    using SH = SerializationHelper;
+
+    if (!SH::WriteData(a_intfc, lineNumber)) return false;
+
+    std::size_t tokenCount = tokens.size();
+    if (!SH::WriteData(a_intfc, tokenCount)) return false;
+
+    for (auto& str : tokens) {
+        if (!SH::WriteString(a_intfc, str)) return false;
+    }
+
+    return true;
+}
+
+bool CommandLine::Deserialize(SKSE::SerializationInterface* a_intfc) {
+    using SH = SerializationHelper;
+
+    if (!SH::ReadData(a_intfc, lineNumber)) return false;
+
+    std::size_t tokenCount;
+    if (!SH::ReadData(a_intfc, tokenCount)) return false;
+
+    tokens.clear();
+    tokens.reserve(tokenCount);
+    for (std::size_t i = 0; i < tokenCount; ++i) {
+        std::string str;
+        if (!SH::ReadString(a_intfc, str)) return false;
+        tokens.push_back(std::move(str));
+    }
+
+    return true;
+}
 
 bool FrameContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     using SH = SerializationHelper;
@@ -665,7 +749,12 @@ bool FrameContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     if (!SH::WriteData(a_intfc, iterActorFormID)) return false;
     
     // Write tokenized script
-    if (!SH::WriteTokenizedScript(a_intfc, scriptTokens)) return false;
+    std::size_t scriptLength = scriptTokens.size();
+    if (!SH::WriteData(a_intfc, scriptLength)) return false;
+
+    for (const auto& cmdLine : scriptTokens) {
+        if (!cmdLine->Serialize(a_intfc)) return false;
+    }
     
     // Write call arguments
     if (!SH::WriteStringVector(a_intfc, callArgs)) return false;
@@ -677,9 +766,11 @@ bool FrameContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     // Write return stack
     if (!SH::WriteSizeTVector(a_intfc, returnStack)) return false;
     
-    // Write local variables (thread-safe)
-    std::lock_guard<std::mutex> lock(localVarsMutex);
+    // Write local variables
     if (!SH::WriteStringMap(a_intfc, localVars)) return false;
+
+    if (!SH::WriteData(a_intfc, isReady)) return false;
+    if (!SH::WriteData(a_intfc, isReadied)) return false;
     
     return true;
 }
@@ -710,8 +801,17 @@ bool FrameContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
         iterActor = nullptr;
     }
     
-    // Read tokenized script
-    if (!SH::ReadTokenizedScript(a_intfc, scriptTokens)) return false;
+    std::size_t scriptLength;
+    if (!SH::ReadData(a_intfc, scriptLength)) return false;
+
+    scriptTokens.clear();
+    scriptTokens.reserve(scriptLength);
+
+    for (std::size_t i = 0; i < scriptLength; ++i) {
+        scriptTokens.push_back(std::make_unique<CommandLine>());
+        auto cmdLine = scriptTokens.back().get();
+        if (!cmdLine->Deserialize(a_intfc)) return false;
+    }
     
     // Read call arguments
     if (!SH::ReadStringVector(a_intfc, callArgs)) return false;
@@ -723,58 +823,332 @@ bool FrameContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     // Read return stack
     if (!SH::ReadSizeTVector(a_intfc, returnStack)) return false;
     
-    // Read local variables (thread-safe)
-    std::lock_guard<std::mutex> lock(localVarsMutex);
+    // Read local variables
     if (!SH::ReadStringMap(a_intfc, localVars)) return false;
+
+    if (!SH::ReadData(a_intfc, isReady)) return false;
+    if (!SH::ReadData(a_intfc, isReadied)) return false;
     
     return true;
 }
 
 bool FrameContext::ParseScript() {
-    return Salty::GetSingleton().ParseScript(this);
+    ParseResult result = Parser::ParseScript(this);
+    if (result != ParseResult::Success) {
+        LogError("Failed to parse script '{}': error code {}", scriptName, static_cast<int>(result));
+        return false;
+    }
+    return IsReady();
 }
 
+bool FrameContext::IsReady() {
+    if (isReadied) {
+        return isReady;
+    }
 
-bool FrameContext::HasStep() {
-    if (currentLine >= scriptTokens.size()) {
-        return false;
+    return Salty::AdvanceToNextRunnableStep(this);
+}
+
+bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
+    auto& manager = ContextManager::GetSingleton();
+    const int MAX_BATCHED_STEPS = 1000;
+    const int TIME_CHECK_INTERVAL = 50; // Check time every 50 steps
+    int stepCount = 0;
+    
+    // Check if execution is paused
+    if (!manager.ShouldContinueExecution()) {
+        LogInfo("Execution paused, yielding control");
+        return IsReady(); // Don't execute, but preserve ready state
     }
     
-    if (!Salty::GetSingleton().IsStepRunnable(scriptTokens[currentLine])) {
-        Salty::GetSingleton().AdvanceToNextRunnableStep(this);
+    auto startTime = std::chrono::high_resolution_clock::now();
+    const auto maxFrameTime = std::chrono::microseconds(500); // 0.5ms budget
+    
+    while (stepCount < MAX_BATCHED_STEPS) {
+        // Check for pause every 10 steps
+        if (stepCount % 10 == 0 && !manager.ShouldContinueExecution()) {
+            LogInfo("Execution paused mid-batch after {} steps", stepCount);
+            break;
+        }
+        
+        bool wasInternal = Salty::RunStep(this, contextInfo);
+        stepCount++;
+        
+        if (!wasInternal) break;
+        if (!IsReady()) break;
+        
+        // Only check time periodically to reduce overhead
+        if (stepCount % TIME_CHECK_INTERVAL == 0) {
+            auto elapsed = std::chrono::high_resolution_clock::now() - startTime;
+            if (elapsed > maxFrameTime) {
+                LogDebug("Frame time budget exceeded after {} steps", stepCount);
+                break;
+            }
+        }
     }
+    
+    if (stepCount >= MAX_BATCHED_STEPS) {
+        LogWarn("Hit maximum batched steps limit, yielding control");
+    }
+    
+    return IsReady();
+}
+#pragma endregion
 
-    return currentLine < scriptTokens.size();
+
+#pragma region SLTStackAnalyzer definition
+namespace {
+void DumpFrame(BSScript::StackFrame* frame) {
+    logger::info("BEGIN DumpFrame");
+    if (!frame) {
+        logger::info("null");
+    } else {
+        std::string owningScriptName = "OWNING SCRIPT UNAVAILABLE";
+        if (frame->owningObjectType)
+            owningScriptName = frame->owningObjectType->GetName();
+        std::string owningFunctionName = "OWNING FUNCTION UNAVAILABLE";
+        if (frame->owningFunction)
+            owningFunctionName = frame->owningFunction->GetName();
+        BSScript::Variable& selfObj = frame->self;
+        std::string selfObjStr = selfObj.GetType().TypeAsString();
+        logger::info("instructionsValid({}) size({}) instructionPointer({}) owningScript({}) owningFunction({}) selfObjStr({})",
+            frame->instructionsValid, frame->size, frame->instructionPointer, owningScriptName, owningFunctionName, selfObjStr
+            );
+    }
+    logger::info("END DumpFrame");
+    if (frame->previousFrame) {
+        logger::info("      WAS PRECEDED BY");
+        DumpFrame(frame->previousFrame);
+    }
 }
 
-// returns false when the FrameContext has nothing else to run
-// i.e. end of script or final return
-bool FrameContext::RunStep() {
-/*
-    currentLine initializes to 0, so assume correct state coming in
-    so we should always advance it before exiting
-    and if it is equal to or greater than scriptTokens.size() we return false
-
-    comments below are general but the point is this will likely pass the current
-
-    otherwise we try to run the line of code, skipping any that are unparseable or unrunnable
-    need to capture errors as well to output
-    perhaps make those functions/events/etc.
-
-        line[0], line[1]...
-        perform same basic logic as currently in Papyrus... i.e. check line[0] for the operation
-        many things can be handled directly
-        others have to be handed off
-
-*/
-    if (!HasStep()) {
-        return false;
+void DumpCodeTasklet(BSTSmartPointer<BSScript::Internal::CodeTasklet>& owningTasklet) {
+    logger::info("BEGIN DumpCodeTasklet");
+    if (!owningTasklet) {
+        logger::info("null");
+    } else {
+        logger::info("resumeReason({})", owningTasklet->resumeReason.underlying());
     }
-    // we really do not care what happens, at least not yet...
-    // SLTEngineRunStep(step) is intended to run as forgivingly as possible, much like Papyrus script
-    bool success = Salty::GetSingleton().RunStep(scriptTokens[currentLine]);
-    currentLine++;
-    Salty::GetSingleton().AdvanceToNextRunnableStep(this);
-    return HasStep();
+    logger::info("END DumpCodeTasklet");
+    DumpFrame(owningTasklet->topFrame);
+}
+
+void DumpStack(RE::BSScript::Stack* stackPtr) {
+    logger::info("\n\n\n\n!!!!!!!!!!!!!!!!!!!!!!");
+    logger::info("BEGIN DumpStack");
+    if (!stackPtr) {
+        logger::info("null");
+    } else {
+        logger::info("stackID({}) state({}) freezeState({}) stackType({}) frames({})",
+            stackPtr->stackID, stackPtr->state.underlying(), stackPtr->freezeState.underlying(), stackPtr->stackType.underlying(), stackPtr->frames
+        );
+    }
+    logger::info("END DumpStack");
+    DumpCodeTasklet(stackPtr->owningTasklet);
+    logger::info("\n!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
+}
+}
+
+void SLTStackAnalyzer::Walk(RE::VMStackID stackId) {
+    
+    // Validate stackId first
+    if (stackId == 0 || stackId == static_cast<RE::VMStackID>(-1)) {
+        logger::warn("Invalid stackId: 0x{:X}", stackId);
+        return;
+    }
+    
+    using RE::BSScript::Internal::VirtualMachine;
+    using RE::BSScript::Stack;
+    using RE::BSScript::Internal::CodeTasklet;
+    using RE::BSScript::StackFrame;
+    
+    auto* vm = VirtualMachine::GetSingleton();
+    if (!vm) {
+        logger::warn("Failed to get VM singleton");
+        return;
+    }
+    
+    RE::BSScript::Stack* stackPtr = nullptr;
+    
+    try {
+        bool success = vm->GetStackByID(stackId, &stackPtr);
+        
+        if (!success) {
+            logger::warn("GetStackByID returned false for ID: 0x{:X}", stackId);
+            return;
+        }
+        
+        if (!stackPtr) {
+            logger::warn("GetStackByID succeeded but returned null pointer for ID: 0x{:X}", stackId);
+            return;
+        }
+        DumpStack(stackPtr);
+    } catch (const std::exception& e) {
+        logger::error("Exception in GetStackByID: {}", e.what());
+        return;
+    } catch (...) {
+        logger::error("Unknown exception in GetStackByID for stackId: 0x{:X}", stackId);
+        return;
+    }
+}
+
+SLTStackAnalyzer::AMEContextInfo SLTStackAnalyzer::GetAMEContextInfo(RE::VMStackID stackId) {
+    SLTStackAnalyzer::AMEContextInfo result;
+    
+    // Validate stackId first
+    if (stackId == 0 || stackId == static_cast<RE::VMStackID>(-1)) {
+        logger::warn("Invalid stackId: 0x{:X}", stackId);
+        return result;
+    }
+    
+    using RE::BSScript::Internal::VirtualMachine;
+    using RE::BSScript::Stack;
+    using RE::BSScript::Internal::CodeTasklet;
+    using RE::BSScript::StackFrame;
+    
+    auto* vm = VirtualMachine::GetSingleton();
+    if (!vm) {
+        logger::warn("Failed to get VM singleton");
+        return result;
+    }
+    auto* handlePolicy = vm->GetObjectHandlePolicy();
+    if (!handlePolicy) {
+        logger::error("Unable to get handle policy");
+        return result;
+    }
+    
+    RE::BSScript::Stack* stackPtr = nullptr;
+    
+    try {
+        bool success = vm->GetStackByID(stackId, &stackPtr);
+        
+        if (!success) {
+            logger::warn("GetStackByID returned false for ID: 0x{:X}", stackId);
+            return result;
+        }
+        
+        if (!stackPtr) {
+            logger::warn("GetStackByID succeeded but returned null pointer for ID: 0x{:X}", stackId);
+            return result;
+        }
+    } catch (const std::exception& e) {
+        logger::error("Exception in GetStackByID: {}", e.what());
+        return result;
+    } catch (...) {
+        logger::error("Unknown exception in GetStackByID for stackId: 0x{:X}", stackId);
+        return result;
+    }
+    
+    if (!stackPtr->owningTasklet) {
+        logger::warn("Stack has no owning tasklet for ID: 0x{:X}", stackId);
+        return result;
+    }
+    
+    auto taskletPtr = stackPtr->owningTasklet;
+    
+    if (!taskletPtr->topFrame) {
+        logger::warn("Tasklet has no top frame for stack ID: 0x{:X}", stackId);
+        return result;
+    }
+    
+    auto* frame = taskletPtr->topFrame;
+    
+    RE::BSScript::Variable& self = frame->self;
+    if (!self.IsObject()) {
+        logger::warn("Frame self is not an object for stack ID: 0x{:X}", stackId);
+        return result;
+    }
+    
+    auto selfObject = self.GetObject();
+    if (!selfObject) {
+        logger::warn("Failed to get self object for stack ID: 0x{:X}", stackId);
+        return result;
+    }
+
+    RE::VMHandle objHandle = selfObject->GetHandle();
+    if (!handlePolicy->IsHandleObjectAvailable(objHandle)) {
+        logger::error("HandlePolicy says handle object not available!");
+        // maybe return result;
+    }
+    RE::ActiveEffect* ame = static_cast<RE::ActiveEffect*>(handlePolicy->GetObjectForHandle(RE::ActiveEffect::VMTYPEID, objHandle));
+    if (!ame) {
+        logger::error("Unable to obtain AME from selfObject with RE::VMHandle({})", objHandle);
+        return result;
+    }
+    RE::Actor* ameActor = ame->GetCasterActor().get();
+    if (!ameActor) {
+        logger::error("Unable to obtain AME.Actor from selfObject");
+        return result;
+    }
+    
+    RE::BSFixedString propNameThreadContextHandle("threadContextHandle");
+    RE::BSScript::Variable* propThreadContextHandle = selfObject->GetProperty(propNameThreadContextHandle);
+    
+    RE::BSFixedString propNameInitialScriptName("initialScriptName");
+    RE::BSScript::Variable* propInitialScriptName = selfObject->GetProperty(propNameInitialScriptName);
+
+    ThreadContextHandle cid = 0;
+    std::string_view initialScriptName = "";
+
+    if (propThreadContextHandle && propThreadContextHandle->IsInt()) {
+        cid = propThreadContextHandle->GetSInt();
+    }
+
+    if (propInitialScriptName && propInitialScriptName->IsString()) {
+        initialScriptName = propInitialScriptName->GetString();
+    }
+
+    if (cid == 0 || initialScriptName.empty()) {
+        // need to see if we have a waiting ThreadContext
+        auto& contextManager = ContextManager::GetSingleton();
+        auto* ameContext = contextManager.GetTargetContext(ameActor);
+        if (!ameContext) {
+            logger::error("No available TargetContext for formID {}", ameActor->GetFormID());
+            return result;
+        }
+
+        // Use ReadData to find unclaimed thread
+        ThreadContext* threadContext = contextManager.ReadData([ameContext](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> ThreadContext* {
+            auto it = std::find_if(ameContext->threads.begin(), ameContext->threads.end(),
+                [](const std::unique_ptr<ThreadContext>& threadContext) {
+                    return !threadContext->isClaimed && !threadContext->wasClaimed;
+                });
+            
+            return (it != ameContext->threads.end()) ? it->get() : nullptr;
+        });
+
+        if (!threadContext) {
+            logger::error("No ThreadContext found");
+            return result;
+        }
+        
+        // Use WriteData to claim the thread
+        contextManager.WriteData([threadContext, propThreadContextHandle, propInitialScriptName](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
+            threadContext->isClaimed = true;
+            threadContext->wasClaimed = true;
+            propThreadContextHandle->SetSInt(threadContext->threadContextHandle);
+            propInitialScriptName->SetString(threadContext->initialScriptName);
+            return nullptr;
+        });
+
+        cid = threadContext->threadContextHandle;
+        initialScriptName = threadContext->initialScriptName;
+    }
+
+    result.contextId = cid;
+    
+    result.isValid = (result.contextId != 0);
+
+    if (result.isValid) {
+        result.ame = ame;
+        result.target = ameActor;
+        result.initialScriptName = initialScriptName;
+    } else {
+        result.ame = nullptr;
+        result.target = nullptr;
+        result.initialScriptName = "";
+    }
+    
+    return result;
 }
 #pragma endregion

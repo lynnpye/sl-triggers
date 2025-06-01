@@ -1,10 +1,36 @@
 #pragma once
-#include <variant>
-#include <string>
-#include <cmath>
+
 #include <charconv>
+#include <cmath>
+#include <filesystem>
+#include <string>
+#include <variant>
+
+#include "util.h"
+
+namespace fs = std::filesystem;
 
 namespace SLT {
+
+enum ScriptType {
+    INVALID = 0,
+
+    INI,
+    JSON,
+
+
+    END
+};
+
+typedef std::uint32_t SKSEMessageType;
+typedef std::int32_t SLTSessionId;
+typedef std::int32_t ThreadContextHandle;
+
+extern const std::string_view BASE_QUEST;
+extern const std::string_view BASE_AME;
+    
+fs::path GetPluginPath();
+SLTSessionId GenerateNewSessionId(bool force = false);
 
 using SLTValue = std::variant<
     std::monostate,    // null/none
@@ -14,16 +40,13 @@ using SLTValue = std::variant<
     std::string
 >;
 
+#pragma region SmartComparator
 class SmartComparator {
 public:
     static bool SmartEquals(const SLTValue& a, const SLTValue& b) {
         return std::visit([](const auto& lhs, const auto& rhs) -> bool {
             return CompareValues(lhs, rhs);
         }, a, b);
-    }
-    
-    static bool SmartEquals(const std::string& a, const std::string& b) {
-        return SmartEquals(ParseValue(a), ParseValue(b));
     }
 
 private:
@@ -42,7 +65,7 @@ private:
         }
     }
 
-    static SLTValue ParseValue(const std::string& str) {
+    static SLTValue ParseValue(std::string_view str) {
         if (str.empty()) return std::monostate{};
         
         // Try bool first - DO NOT ATTEMPT TO CONVERT ANYTHING BUT THE CASE-INSENSITIVE STRINGS "TRUE"/"FALSE"
@@ -71,7 +94,7 @@ private:
         }
         
         // Default to string
-        return str;
+        return std::string(str);
     }
     
     template<typename T, typename U>
@@ -168,5 +191,6 @@ private:
         }
     }
 };
+#pragma endregion
 
 }

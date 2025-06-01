@@ -1,65 +1,89 @@
 #pragma once
 
+// Parameter macros for common Papyrus function signatures
+#define PAPYRUS_STATIC_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine, [[maybe_unused]] const ::RE::VMStackID StackID, [[maybe_unused]] RE::StaticFunctionTag*
+#define PAPYRUS_INSTANCE_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine, [[maybe_unused]] const ::RE::VMStackID StackID
+
 namespace SLT {
     namespace binding {
-        namespace detail {
-            class PapyrusStaticFunctionBinder {
-            public:
-                [[nodiscard]] static RE::BSTSmartPointer<RE::BSScript::Stack> GetStack(RE::VMStackID stackID) noexcept;
+        // Base class for function providers
+        class BasePapyrusFunctionProvider {
+        public:
+            virtual ~BasePapyrusFunctionProvider() = default;
+            virtual void RegisterFunctions(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) = 0;
+        };
 
-            protected:
-                inline PapyrusStaticFunctionBinder() noexcept = default;
+        // Template-based registrar for clean registration
+        template<typename T>
+        class PapyrusRegistrar {
+            RE::BSScript::Internal::VirtualMachine* vm_;
+            std::string className_;
+            
+        public:
+            PapyrusRegistrar(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) 
+                : vm_(vm), className_(className) {}
+            
+            // Static function registration
+            template<typename Return, typename... Args>
+            void RegisterStatic(std::string_view name, Return(*func)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...), bool callableFromTasklets = false) {
+                auto wrapper = reinterpret_cast<Return(*)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...)>(func);
+                vm_->RegisterFunction(name, className_, wrapper, callableFromTasklets);
+            }
+            
+            // Static latent function registration
+            template<typename Return, typename... Args>
+            void RegisterStaticLatent(std::string_view name, Return(*func)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...), bool callableFromTasklets = false) {
+                auto wrapper = reinterpret_cast<Return(*)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...)>(func);
+                vm_->RegisterLatentFunction(name, className_, wrapper, callableFromTasklets);
+            }
+            
+            // Instance function registration (for future use)
+            template<typename Return, typename Instance, typename... Args>
+            void RegisterInstance(std::string_view name, Return(*func)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, Instance*, Args...), bool callableFromTasklets = false) {
+                auto wrapper = reinterpret_cast<Return(*)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, Instance*, Args...)>(func);
+                vm_->RegisterFunction(name, className_, wrapper, callableFromTasklets);
+            }
+            
+            // Instance latent function registration (for future use)
+            template<typename Return, typename Instance, typename... Args>
+            void RegisterInstanceLatent(std::string_view name, Return(*func)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, Instance*, Args...), bool callableFromTasklets = false) {
+                auto wrapper = reinterpret_cast<Return(*)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, Instance*, Args...)>(func);
+                vm_->RegisterLatentFunction(name, className_, wrapper, callableFromTasklets);
+            }
+        };
 
-                class Function {
-                public:
-                    inline explicit Function(std::string_view className, std::string_view functionName,
-                                                    RE::BSScript::IVirtualMachine* vm) noexcept
-                            : _className(className), _functionName(functionName), _vm(vm) {
-                    }
+        // Provider base class with template magic
+        template<typename Derived>
+        class PapyrusFunctionProvider : public BasePapyrusFunctionProvider {
+        public:
+            void RegisterFunctions(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) override {
+                static_cast<Derived*>(this)->RegisterAllFunctions(vm, className);
+            }
+        };
 
-                    template <class Return, class... Args>
-                    void operator>>(Return(*function)(RE::BSScript::Internal::VirtualMachine*,
-                            const RE::VMStackID, Args...)) {
-                        _vm->RegisterFunction(
-                                _functionName, _className, reinterpret_cast<Return(*)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, Args...)>(
-                                        function));
-                    }
-
-                private:
-                    std::string_view _className;
-                    std::string_view _functionName;
-                    RE::BSScript::IVirtualMachine* _vm;
-
-                    friend class PapyrusStaticFunctionBinder;
-                };
-            };
+        // Utility function to get stack (keeping from original implementation)
+        [[nodiscard]] static RE::BSTSmartPointer<RE::BSScript::Stack> GetStack(RE::VMStackID stackID) noexcept {
+            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+            if (!vm) {
+                return nullptr;
+            }
+            
+            RE::BSScript::Stack* rawStack = nullptr;
+            if (!vm->GetStackByID(stackID, &rawStack) || !rawStack) {
+                return nullptr;
+            }
+            
+            return RE::BSTSmartPointer<RE::BSScript::Stack>(rawStack);
         }
     }
 }
 
-#define PLUGIN_BINDINGS_CONCAT(x, y) x ## y
-
-#define PLUGIN_BINDINGS_PAPYRUS_CLASS(name) namespace { \
-    struct PLUGIN_BINDINGS_CONCAT(PapyrusStaticFunctionBinder, name) : public ::SLT::binding::detail::PapyrusStaticFunctionBinder { \
-        inline PLUGIN_BINDINGS_CONCAT(PapyrusStaticFunctionBinder, name)() {                                                   \
-            ::SKSE::GetPapyrusInterface()->Register(+[](::RE::BSScript::Internal::VirtualMachine* vm) {         \
-                Initialize(#name, vm); \
-                return true;           \
-            });                        \
-        }                              \
-                                       \
-        private:                       \
-            static inline void Initialize(std::string_view ClassName, ::RE::BSScript::Internal::VirtualMachine* VirtualMachine); \
-    };                                 \
-    OnAfterSKSEInit([]{                     \
-        PLUGIN_BINDINGS_CONCAT(PapyrusStaticFunctionBinder, name) PLUGIN_BINDINGS_CONCAT(__papyrusClass, name);                         \
-    });                                  \
-}                                      \
-void PLUGIN_BINDINGS_CONCAT(PapyrusStaticFunctionBinder, name)::Initialize([[maybe_unused]] const std::string_view ClassName,  \
-    [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine)
-
-#define PLUGIN_BINDINGS_PAPYRUS_NONSTATIC_FUNCTION(name, ...) Function(ClassName, #name, VirtualMachine) >> +[]([[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine, [[maybe_unused]] const ::RE::VMStackID StackID, __VA_ARGS__)
-
-#define PLUGIN_BINDINGS_PAPYRUS_STATIC_FUNCTION(name, ...) Function(ClassName, #name, VirtualMachine) >> +[]([[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine, [[maybe_unused]] const ::RE::VMStackID StackID, ::RE::StaticFunctionTag* __VA_OPT__(,) __VA_ARGS__)
-
-#define PLUGIN_CURRENT_STACK GetStack(StackID)
+// Registration helper macro
+#define REGISTER_PAPYRUS_PROVIDER(ProviderClass, ClassName) \
+    OnAfterSKSEInit([]{ \
+        ::SKSE::GetPapyrusInterface()->Register([](::RE::BSScript::Internal::VirtualMachine* vm) { \
+            static ProviderClass provider; \
+            provider.RegisterFunctions(vm, ClassName); \
+            return true; \
+        }); \
+    });
