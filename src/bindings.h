@@ -1,8 +1,12 @@
 #pragma once
 
 // Parameter macros for common Papyrus function signatures
-#define PAPYRUS_STATIC_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine, [[maybe_unused]] const ::RE::VMStackID StackID, [[maybe_unused]] RE::StaticFunctionTag*
-#define PAPYRUS_INSTANCE_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* VirtualMachine, [[maybe_unused]] const ::RE::VMStackID StackID
+#define PAPYRUS_STATIC_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* vm, [[maybe_unused]] const ::RE::VMStackID stackId, [[maybe_unused]] RE::StaticFunctionTag*
+#define PAPYRUS_INSTANCE_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* vm, [[maybe_unused]] const ::RE::VMStackID stackId
+
+#define PAPYRUS_NATIVE_DECL [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* vm, [[maybe_unused]] const ::RE::VMStackID stackId
+
+#define PAPYRUS_FN_PARMS vm, stackId
 
 namespace SLT {
     namespace binding {
@@ -62,14 +66,14 @@ namespace SLT {
         };
 
         // Utility function to get stack (keeping from original implementation)
-        [[nodiscard]] static RE::BSTSmartPointer<RE::BSScript::Stack> GetStack(RE::VMStackID stackID) noexcept {
+        [[nodiscard]] static RE::BSTSmartPointer<RE::BSScript::Stack> GetStack(RE::VMStackID stackId) noexcept {
             auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
             if (!vm) {
                 return nullptr;
             }
             
             RE::BSScript::Stack* rawStack = nullptr;
-            if (!vm->GetStackByID(stackID, &rawStack) || !rawStack) {
+            if (!vm->GetStackByID(stackId, &rawStack) || !rawStack) {
                 return nullptr;
             }
             

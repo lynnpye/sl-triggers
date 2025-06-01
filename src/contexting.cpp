@@ -504,6 +504,220 @@ std::string ContextManager::GetGlobalVar(std::string_view name) const {
     });
 }
 
+bool ContextManager::HasGlobalVar(std::string_view name) const {
+    if (name.empty()) {
+        return false;
+    }
+    
+    return ReadData([name = std::string(name)](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> bool {
+        auto it = globalVars.find(name);
+        return (it != globalVars.end()) ? true : false;
+    });
+}
+
+std::string ContextManager::SetVar(FrameContext* frame, std::string_view token, std::string_view value) {
+    if (!frame || token.empty()) return "";
+    
+    if (token[0] == '$' && token.length() > 1) {
+        std::string remaining = std::string(token.substr(1));
+        
+        size_t hashPos = remaining.find('#');
+        
+        if (hashPos != std::string::npos) {
+            std::string scope = remaining.substr(0, hashPos);
+            std::string varName = remaining.substr(hashPos + 1);
+            
+            if (varName.empty()) {
+                frame->LogWarn("SetVar: Variable name cannot be empty after scope separator");
+                return "";
+            }
+            
+            if (scope == "session") {
+                frame->thread->SetThreadVar(varName, value);
+            }
+            else if (scope == "actor") {
+                if (!frame->thread || !frame->thread->target) {
+                    frame->LogError("SetVar: No valid target for actor scope variable");
+                    return "";
+                }
+                frame->thread->target->SetTargetVar(varName, value);
+            }
+            else if (scope == "global") {
+                ContextManager::GetSingleton().SetGlobalVar(varName, value);
+            }
+            else {
+                frame->LogWarn("Unknown variable scope for SET: {}", scope);
+                return "";
+            }
+        } else {
+            // Local variables
+            frame->SetLocalVar(remaining, value);
+        }
+    } else {
+        frame->LogWarn("Invalid variable token for SET (missing $): {}", token);
+        return "";
+    }
+    return std::string(value);
+}
+
+std::string ContextManager::GetVar(FrameContext* frame, std::string_view token) const {
+    if (!frame || token.empty()) return "";
+    
+    if (token[0] == '$' && token.length() > 1) {
+        std::string remaining = std::string(token.substr(1));
+        
+        size_t hashPos = remaining.find('#');
+        
+        if (hashPos != std::string::npos) {
+            std::string scope = remaining.substr(0, hashPos);
+            std::string varName = remaining.substr(hashPos + 1);
+            
+            if (varName.empty()) return "";
+            
+            if (scope == "session") {
+                return frame->thread->GetThreadVar(varName);
+            }
+            else if (scope == "actor") {
+                if (!frame->thread || !frame->thread->target) return "";
+                return frame->thread->target->GetTargetVar(varName);
+            }
+            else if (scope == "global") {
+                return ContextManager::GetSingleton().GetGlobalVar(varName);
+            }
+            else {
+                frame->LogWarn("Unknown variable scope for GET: {}", scope);
+                return "";
+            }
+        } else {
+            // Local variables
+            return frame->GetLocalVar(remaining);
+        }
+    }
+    
+    return "";
+}
+
+bool ContextManager::HasVar(FrameContext* frame, std::string_view token) const {
+    if (!frame || token.empty()) return false;
+    
+    if (token[0] == '$' && token.length() > 1) {
+        std::string remaining = std::string(token.substr(1));
+        
+        size_t hashPos = remaining.find('#');
+        
+        if (hashPos != std::string::npos) {
+            std::string scope = remaining.substr(0, hashPos);
+            std::string varName = remaining.substr(hashPos + 1);
+            
+            if (varName.empty())
+                return false;
+            
+            if (scope == "session") {
+                return frame->thread->HasThreadVar(varName);
+            }
+            else if (scope == "actor") {
+                if (!frame->thread || !frame->thread->target)
+                    return false;
+                return frame->thread->target->HasTargetVar(varName);
+            }
+            else if (scope == "global") {
+                return ContextManager::GetSingleton().HasGlobalVar(varName);
+            }
+            else {
+                frame->LogWarn("Unknown variable scope for GET: {}", scope);
+                return false;
+            }
+        } else {
+            // Local variables
+            return frame->HasLocalVar(remaining);
+        }
+    }
+    
+    return false;
+}
+
+std::string ContextManager::ResolveValueVariable(FrameContext* frame, std::string_view token) const {
+    if (token.empty()) return "";
+    
+    // Most recent result
+    if (token == "$$") {
+        return frame->mostRecentResult;
+    }
+
+    // also could be newly introduced system variables leading with #
+    // like (a made up) #SLTVERSION which should always return the int sl_triggers version
+
+    // need to hook up extension logic
+
+
+    // and then this is the simple "oh no, no one could handle it, get the value" part
+    
+    auto& manager = ContextManager::GetSingleton();
+
+    return manager.ReadData([&token, frame](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> std::string {
+        if (token[0] == '$' && token.length() > 1) {
+            std::string remaining = std::string(token.substr(1));
+            
+            size_t hashPos = remaining.find('#');
+            
+            if (hashPos != std::string::npos) {
+                std::string scope = remaining.substr(0, hashPos);
+                std::string varName = remaining.substr(hashPos + 1);
+                
+                if (varName.empty()) return "";
+                
+                if (scope == "session") {
+                    if (frame->thread->HasThreadVar(varName))
+                        return frame->thread->GetThreadVar(varName);
+                }
+                else if (scope == "actor") {
+                    if (!frame->thread || !frame->thread->target)
+                        return "";
+                    if (frame->thread->target->HasTargetVar(varName))
+                        return frame->thread->target->GetTargetVar(varName);
+                }
+                else if (scope == "global") {
+                    if (ContextManager::GetSingleton().HasGlobalVar(varName))
+                        return ContextManager::GetSingleton().GetGlobalVar(varName);
+                }
+                else {
+                    frame->LogWarn("Unknown variable scope for GET: {}", scope);
+                    return "";
+                }
+            } else {
+                // Local variables
+                if (frame->HasLocalVar(remaining))
+                    return frame->GetLocalVar(remaining);
+            }
+        }
+        
+        return std::string(token); // Not a variable
+    });
+}
+
+RE::TESForm* ContextManager::ResolveFormVariable(FrameContext* frame, std::string_view token) const {
+    if (token.empty()) return nullptr;
+
+    // also could be newly introduced system variables leading with #
+
+    // need to hook up extension logic
+
+
+    // and then this is the simple "oh no, no one could handle it, get the value" part
+    if (token == "#player") return RE::PlayerCharacter::GetSingleton();
+    if (token == "#self") {
+        if (auto targetActor = frame->thread->target->AsActor()) {
+            return targetActor;
+        }
+        return nullptr;
+    }
+    if (token == "#actor") return frame->iterActor;
+    if (token == "#none") return nullptr;
+
+
+    return nullptr;
+}
+
 #pragma endregion
 
 #pragma region TargetContext
@@ -898,10 +1112,11 @@ bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
 
 #pragma region SLTStackAnalyzer definition
 namespace {
-void DumpFrame(BSScript::StackFrame* frame) {
-    logger::info("BEGIN DumpFrame");
+void DumpStack(RE::BSScript::Stack* stackPtr, std::string prefix = "");
+void DumpFrame(BSScript::StackFrame* frame, RE::BSScript::Stack* stackPtr, std::string prefix) {
+    logger::info("{}BEGIN DumpFrame", prefix);
     if (!frame) {
-        logger::info("null");
+        logger::info("{}null", prefix);
     } else {
         std::string owningScriptName = "OWNING SCRIPT UNAVAILABLE";
         if (frame->owningObjectType)
@@ -910,41 +1125,45 @@ void DumpFrame(BSScript::StackFrame* frame) {
         if (frame->owningFunction)
             owningFunctionName = frame->owningFunction->GetName();
         BSScript::Variable& selfObj = frame->self;
+        LogVariableInfo(selfObj, "frame dumping");
         std::string selfObjStr = selfObj.GetType().TypeAsString();
-        logger::info("instructionsValid({}) size({}) instructionPointer({}) owningScript({}) owningFunction({}) selfObjStr({})",
+        logger::info("{}instructionsValid({}) size({}) instructionPointer({}) owningScript({}) owningFunction({}) selfObjStr({})", prefix,
             frame->instructionsValid, frame->size, frame->instructionPointer, owningScriptName, owningFunctionName, selfObjStr
             );
     }
-    logger::info("END DumpFrame");
+    logger::info("{}END DumpFrame", prefix);
     if (frame->previousFrame) {
-        logger::info("      WAS PRECEDED BY");
-        DumpFrame(frame->previousFrame);
+        logger::info("{} WAS PRECEDED BY:", prefix);
+        DumpFrame(frame->previousFrame, stackPtr, prefix + " ");
+    } else if (frame->parent && frame->parent != stackPtr) {
+        logger::info("{}\t\tWITH PREVIOUS STACK:::", prefix);
+        DumpStack(frame->parent, prefix + "\t\t");
     }
 }
 
-void DumpCodeTasklet(BSTSmartPointer<BSScript::Internal::CodeTasklet>& owningTasklet) {
-    logger::info("BEGIN DumpCodeTasklet");
+void DumpCodeTasklet(BSTSmartPointer<BSScript::Internal::CodeTasklet>& owningTasklet, RE::BSScript::Stack* stackPtr, std::string prefix) {
+    logger::info("{}BEGIN DumpCodeTasklet", prefix);
     if (!owningTasklet) {
-        logger::info("null");
+        logger::info("{}null", prefix);
     } else {
-        logger::info("resumeReason({})", owningTasklet->resumeReason.underlying());
+        logger::info("{}resumeReason({})", prefix, owningTasklet->resumeReason.underlying());
     }
-    logger::info("END DumpCodeTasklet");
-    DumpFrame(owningTasklet->topFrame);
+    logger::info("{}END DumpCodeTasklet", prefix);
+    DumpFrame(owningTasklet->topFrame, stackPtr, prefix);
 }
 
-void DumpStack(RE::BSScript::Stack* stackPtr) {
+void DumpStack(RE::BSScript::Stack* stackPtr, std::string prefix) {
     logger::info("\n\n\n\n!!!!!!!!!!!!!!!!!!!!!!");
-    logger::info("BEGIN DumpStack");
+    logger::info("{}BEGIN DumpStack", prefix);
     if (!stackPtr) {
-        logger::info("null");
+        logger::info("{}null", prefix);
     } else {
-        logger::info("stackID({}) state({}) freezeState({}) stackType({}) frames({})",
+        logger::info("{}stackID({}) state({}) freezeState({}) stackType({}) frames({})", prefix,
             stackPtr->stackID, stackPtr->state.underlying(), stackPtr->freezeState.underlying(), stackPtr->stackType.underlying(), stackPtr->frames
         );
     }
-    logger::info("END DumpStack");
-    DumpCodeTasklet(stackPtr->owningTasklet);
+    logger::info("{}END DumpStack", prefix);
+    DumpCodeTasklet(stackPtr->owningTasklet, stackPtr, prefix);
     logger::info("\n!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
 }
 }
@@ -1058,6 +1277,7 @@ SLTStackAnalyzer::AMEContextInfo SLTStackAnalyzer::GetAMEContextInfo(RE::VMStack
         logger::warn("Frame self is not an object for stack ID: 0x{:X}", stackId);
         return result;
     }
+    //LogVariableInfo(self, "frame self");
     
     auto selfObject = self.GetObject();
     if (!selfObject) {
@@ -1097,6 +1317,8 @@ SLTStackAnalyzer::AMEContextInfo SLTStackAnalyzer::GetAMEContextInfo(RE::VMStack
     if (propInitialScriptName && propInitialScriptName->IsString()) {
         initialScriptName = propInitialScriptName->GetString();
     }
+    
+    FrameContext* frameContext = nullptr;
 
     if (cid == 0 || initialScriptName.empty()) {
         // need to see if we have a waiting ThreadContext
@@ -1133,21 +1355,26 @@ SLTStackAnalyzer::AMEContextInfo SLTStackAnalyzer::GetAMEContextInfo(RE::VMStack
 
         cid = threadContext->threadContextHandle;
         initialScriptName = threadContext->initialScriptName;
+
+        frameContext = threadContext->callStack.back().get();
     }
 
-    result.contextId = cid;
+    result.handle = cid;
     
-    result.isValid = (result.contextId != 0);
+    result.isValid = (result.handle != 0);
 
     if (result.isValid) {
         result.ame = ame;
         result.target = ameActor;
         result.initialScriptName = initialScriptName;
+        result.frame = ContextManager::GetSingleton().GetFrameContext(cid);
     } else {
         result.ame = nullptr;
         result.target = nullptr;
         result.initialScriptName = "";
     }
+
+    result.frame = frameContext;
     
     return result;
 }

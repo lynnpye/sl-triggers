@@ -58,9 +58,6 @@ ParseResult Parser::ParseScript(FrameContext* frame) {
     frame->isReady = false;
     frame->isReadied = false;
     
-    logger::info("Successfully parsed script: {} ({} lines)", 
-                frame->scriptName, frame->scriptTokens.size());
-    
     return ParseResult::Success;
 }
 

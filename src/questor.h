@@ -4,6 +4,20 @@
 
 namespace SLT {
 
+/*
+Add SLTExtension
+    - isenabled flag
+    - extensionKey
+    - friendly name
+    - priority
+    - bool CustomResolveValue(sl_triggersCmd, string code)
+        wrapper around Papyrus function
+        sets CustomResolveResult (use if func returned true)
+    - bool CustomResolveForm(sl_triggersCmd, string code)
+        wrapper around Papyrus function
+        sets CustomResolveFormResult (use if func returned true)
+*/
+
 class SLTExtensionTracker {
 private:
     std::vector<RE::TESQuest*> trackedQuests;

@@ -7,6 +7,7 @@ using namespace std::literals;
 namespace fs = std::filesystem;
 
 #include <cstdint>
+#include <format>
 #include <functional>
 #include <mutex>
 #include <ranges>

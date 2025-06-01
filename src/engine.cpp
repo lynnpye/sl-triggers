@@ -36,15 +36,12 @@ void FunctionLibrary::GetFunctionLibraries() {
                 libconfigs.push_back(entry.path().filename().string());
         }
 
-        logger::info("libconfigs({})", Util::String::Join(libconfigs, ", "));
-
         string tail = "-libraries.json";
         for (const auto& filename : libconfigs) {
             if (filename.size() >= tail.size() && 
                 filename.substr(filename.size() - tail.size()) == tail) {
                 
                 string extensionKey = filename.substr(0, filename.size() - tail.size());
-                logger::info("checking for '{}'", extensionKey);
                 if (!extensionKey.empty()) {
                     // Parse JSON file
                     nlohmann::json j;
@@ -52,7 +49,6 @@ void FunctionLibrary::GetFunctionLibraries() {
                         std::ifstream in(folderPath / filename);
                         in >> j;
                     } catch (...) {
-                        logger::info("Invalid json?");
                         continue; // skip invalid json
                     }
                     // Assume root is an object: keys = lib names, values = int priorities
@@ -66,7 +62,7 @@ void FunctionLibrary::GetFunctionLibraries() {
                     }
                 }
             } else {
-                logger::info("Skipping file '{}'", filename);
+                //logger::info("Skipping file '{}'", filename);
             }
         }
         
@@ -81,6 +77,8 @@ void FunctionLibrary::GetFunctionLibraries() {
 }
 
 namespace {
+
+using namespace SLT;
 void DumpFunctionLibraryCache() {
     logger::info("=== Function Library Cache Dump ===");
     logger::info("Cache size: {}", FunctionLibrary::functionScriptCache.size());
@@ -116,7 +114,7 @@ void DumpFunctionLibraries() {
 bool FunctionLibrary::PrecacheLibraries() {
     logger::info("PrecacheLibraries starting");
     FunctionLibrary::GetFunctionLibraries();
-    DumpFunctionLibraries();
+    //DumpFunctionLibraries();
     if (g_FunctionLibraries.empty()) {
         logger::info("PrecacheLibraries: libraries was empty");
         return false;
@@ -129,20 +127,17 @@ bool FunctionLibrary::PrecacheLibraries() {
         std::string& _scriptname = scriptlib->functionFile;
 
         // the plugin continues to be responsive
-        logger::info("Processing lib '{}', calling GetScriptObjectType({})", _scriptname, scriptlib->extensionKey); // this gets called
+        //logger::info("Processing lib '{}', calling GetScriptObjectType({})", _scriptname, scriptlib->extensionKey); // this gets called
         bool success = false;
         try {
             success = vm->GetScriptObjectType(_scriptname, typeinfoptr);
         } catch (...) {
-            logger::info("exception?"); // this never gets called
+            //logger::info("exception?"); // this never gets called
         }
-        logger::info("Immediately after call to GetScriptObjectType"); // this never gets called
 
         if (!success) {
             logger::info("PrecacheLibraries: ObjectTypeInfo unavailable");
             continue;
-        } else {
-            logger::info("PrecacheLibraries: retrieved type info");
         }
 
         success = false;
@@ -150,14 +145,10 @@ bool FunctionLibrary::PrecacheLibraries() {
         int numglobs = typeinfoptr->GetNumGlobalFuncs();
         auto globiter = typeinfoptr->GetGlobalFuncIter();
 
-        logger::info("has {} globals", numglobs);
-
         for (int i = 0; i < numglobs; i++) {
             auto libfunc = globiter[i].func;
 
             RE::BSFixedString libfuncName = libfunc->GetName();
-
-            logger::info("checking function '{}'", libfuncName.c_str());
 
             auto cachedIt = functionScriptCache.find(libfuncName.c_str());
             if (cachedIt != functionScriptCache.end()) {
@@ -166,7 +157,7 @@ bool FunctionLibrary::PrecacheLibraries() {
             }
 
             if (libfunc->GetParamCount() != 3) {
-                logger::info("param count rejection: need 3 has {}", libfunc->GetParamCount());
+                //logger::info("param count rejection: need 3 has {}", libfunc->GetParamCount());
                 continue;
             }
 
@@ -177,7 +168,6 @@ bool FunctionLibrary::PrecacheLibraries() {
 
             std::string Actor_name("Actor");
             if (!paramTypeInfo.IsObject() && Actor_name != paramTypeInfo.TypeAsString()) {
-                logger::info("first param wrong");
                 continue;
             }
 
@@ -185,23 +175,20 @@ bool FunctionLibrary::PrecacheLibraries() {
 
             std::string ActiveMagicEffect_name("ActiveMagicEffect");
             if (!paramTypeInfo.IsObject() && ActiveMagicEffect_name != paramTypeInfo.TypeAsString()) {
-                logger::info("second param wrong");
                 continue;
             }
 
             libfunc->GetParam(2, paramName, paramTypeInfo);
 
             if (paramTypeInfo.GetRawType() != RE::BSScript::TypeInfo::RawType::kStringArray) {
-                logger::info("third param wrong");
                 continue;
             }
 
-            logger::info("adding");
             functionScriptCache[std::string(libfuncName)] = std::string(_scriptname.c_str());
         }
     }
 
-    DumpFunctionLibraryCache();
+    //DumpFunctionLibraryCache();
 
     logger::info("PrecacheLibraries completed");
     return true;
@@ -214,6 +201,8 @@ OnDataLoaded([]{
 
 #pragma region engine.cpp exclusive
 namespace {
+
+using namespace SLT;
     // Internal helper functions - not exposed in header
       
     class VoidCallbackFunctor : public RE::BSScript::IStackCallbackFunctor {
@@ -234,150 +223,44 @@ namespace {
             std::function<void()> onDone;
     };
 
+    
+/*
+Actual rules:
+bool needslt
+bool resolved
+for i : 0 .. extensions.length
+    ext = extensions[i]
+    if needslt && ext.priority >= 0
+        needslt = false
+        IF MANAGER.HASVAR
+            return manager.getvar
+        ENDIF
+    else
+
+    resolved = ext.customresolve
+    if resolved
+        return cmdPrimary.CustomResolveResult
+    endif
+endfor
+*/
     // Core resolution function - this is where the magic happens
     // NOTE: All variable access now goes through ContextManager's coordination lock
     std::string ResolveValueVariable(std::string_view token, FrameContext* frame) {
-        if (token.empty()) return "";
-        
-        // Most recent result
-        if (token == "$$") {
-            return frame->mostRecentResult;
-        }
-
-        // also could be newly introduced system variables leading with #
-        // like (a made up) #SLTVERSION which should always return the int sl_triggers version
-
-        // need to hook up extension logic
-        
-        // Variable references starting with $
-        if (token[0] == '$' && token.length() > 1) {
-            std::string remaining = std::string(token.substr(1)); // Remove $
-            
-            // Look for scope separator
-            size_t hashPos = remaining.find('#');
-            if (hashPos != std::string_view::npos) {
-                std::string scope = std::string(remaining.substr(0, hashPos));
-                std::string varName = std::string(remaining.substr(hashPos + 1));
-                
-                if (scope == "session") {
-                    return frame->thread->GetThreadVar(varName);
-                }
-                else if (scope == "actor") {
-                    return frame->thread->target->GetTargetVar(varName);
-                }
-                else if (scope == "global") {
-                    return ContextManager::GetSingleton().GetGlobalVar(varName);
-                }
-                else {
-                    frame->LogWarn("Unknown variable scope: {}", scope);
-                    return "";
-                }
-            } else {
-                // No scope = local
-                return frame->GetLocalVar(std::string(remaining));
-            }
-        }
-        
-        return std::string(token); // Not a variable
+        return ContextManager::GetSingleton().ResolveValueVariable(frame, token);
     }
 
-    // In engine.cpp - much cleaner and more direct:
-    void SetVar(FrameContext* frame, std::string_view token, std::string_view value) {
-        if (!frame || token.empty()) return;
-        
-        if (token[0] == '$' && token.length() > 1) {
-            std::string remaining = std::string(token.substr(1));
-            
-            size_t hashPos = remaining.find('#');
-            
-            if (hashPos != std::string::npos) {
-                std::string scope = remaining.substr(0, hashPos);
-                std::string varName = remaining.substr(hashPos + 1);
-                
-                if (varName.empty()) {
-                    frame->LogWarn("SetVar: Variable name cannot be empty after scope separator");
-                    return;
-                }
-                
-                if (scope == "session") {
-                    frame->thread->SetThreadVar(varName, value);
-                }
-                else if (scope == "actor") {
-                    if (!frame->thread || !frame->thread->target) {
-                        frame->LogError("SetVar: No valid target for actor scope variable");
-                        return;
-                    }
-                    frame->thread->target->SetTargetVar(varName, value);
-                }
-                else if (scope == "global") {
-                    ContextManager::GetSingleton().SetGlobalVar(varName, value);
-                }
-                else {
-                    frame->LogWarn("Unknown variable scope for SET: {}", scope);
-                }
-            } else {
-                // Local variables
-                frame->SetLocalVar(remaining, value);
-            }
-        } else {
-            frame->LogWarn("Invalid variable token for SET (missing $): {}", token);
-        }
-    }
-
-    std::string GetVar(FrameContext* frame, std::string_view token) {
-        if (!frame || token.empty()) return "";
-        
-        if (token[0] == '$' && token.length() > 1) {
-            std::string remaining = std::string(token.substr(1));
-            
-            size_t hashPos = remaining.find('#');
-            
-            if (hashPos != std::string::npos) {
-                std::string scope = remaining.substr(0, hashPos);
-                std::string varName = remaining.substr(hashPos + 1);
-                
-                if (varName.empty()) return "";
-                
-                if (scope == "session") {
-                    return frame->thread->GetThreadVar(varName);
-                }
-                else if (scope == "actor") {
-                    if (!frame->thread || !frame->thread->target) return "";
-                    return frame->thread->target->GetTargetVar(varName);
-                }
-                else if (scope == "global") {
-                    return ContextManager::GetSingleton().GetGlobalVar(varName);
-                }
-                else {
-                    frame->LogWarn("Unknown variable scope for GET: {}", scope);
-                    return "";
-                }
-            } else {
-                // Local variables
-                return frame->GetLocalVar(remaining);
-            }
-        }
-        
-        return "";
+    RE::TESForm* ResolveFormVariable(std::string_view token, FrameContext* frame) {
+        return ContextManager::GetSingleton().ResolveFormVariable(frame, token);
     }
 
     RE::Actor* ResolveActorVariable(std::string_view token, FrameContext* frame) {
-        RE::Actor* actor = RE::PlayerCharacter::GetSingleton();
+        RE::TESForm* form = ResolveFormVariable(token, frame);
 
-        if (token.empty()) return actor;
-
-        if (token == "#player") return actor;
-        if (token == "#self") {
-            if (auto targetActor = frame->thread->target->AsActor()) {
-                return targetActor;
-            }
-            return actor;
+        if (!form) {
+            return RE::PlayerCharacter::GetSingleton();
         }
-        if (token == "#actor") return frame->iterActor;
 
-        // need to hook up extension logic 
-
-        return actor;
+        return form->As<RE::Actor>();
     }
 
     // Label extraction
@@ -478,7 +361,7 @@ namespace {
         }
         
         // Use the new unified SetVar function
-        SetVar(frame, tokens[1], value);
+        ContextManager::GetSingleton().SetVar(frame, tokens[1], value);
     }
 
     void ExecuteIfCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
@@ -594,13 +477,13 @@ namespace {
         }
         
         // Get current value using the new GetVar function
-        std::string currentValue = GetVar(frame, tokens[1]);
+        std::string currentValue = ContextManager::GetSingleton().GetVar(frame, tokens[1]);
         
         float currentFloat = currentValue.empty() ? 0.0f : std::stof(currentValue);
         float newValue = currentFloat + increment;
         
         // Set the new value using the new SetVar function
-        SetVar(frame, tokens[1], std::to_string(newValue));
+        ContextManager::GetSingleton().SetVar(frame, tokens[1], std::to_string(newValue));
     }
 
     void ExecuteCatCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
@@ -612,12 +495,12 @@ namespace {
         std::string appendValue = ResolveValueVariable(tokens[2], frame);
         
         // Get current value using the new GetVar function
-        std::string currentValue = GetVar(frame, tokens[1]);
+        std::string currentValue = ContextManager::GetSingleton().GetVar(frame, tokens[1]);
         
         std::string newValue = currentValue + appendValue;
         
         // Set the new value using the new SetVar function
-        SetVar(frame, tokens[1], newValue);
+        ContextManager::GetSingleton().SetVar(frame, tokens[1], newValue);
     }
 
     void ExecuteEndsubCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
@@ -665,7 +548,7 @@ namespace {
             std::string argValue = frame->callArgs[argIndex];
             
             // Use the new SetVar function
-            SetVar(frame, tokens[2], argValue);
+            ContextManager::GetSingleton().SetVar(frame, tokens[2], argValue);
         } else {
             frame->LogWarn("CALLARG: invalid argument index {} (available: {})", 
                           argIndex, frame->callArgs.size());
@@ -689,7 +572,6 @@ namespace {
                 if (cachedIt != FunctionLibrary::functionScriptCache.end()) {
                     auto& cachedScript = cachedIt->second;
                     success = vm->DispatchStaticCall(cachedScript, _param[0], operationArgs, noop);
-                    logger::info("DispatchStaticCall '{}' success:{}", _param[0].c_str(), success);
                     return success;
                 } else {
                     logger::error("Unable to find operation {} in function library cache", _param[0].c_str());

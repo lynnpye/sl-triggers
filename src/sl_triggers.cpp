@@ -9,36 +9,40 @@ namespace SLT {
 #pragma region SLTNativeFunctions declaration
 class SLTNativeFunctions {
 public:
-static void SetLibrariesForExtensionAllowed(const RE::VMStackID stackID, std::string_view extensionKey, 
+static void SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
                                             bool allowed);
 
-static bool PrepareContextForTargetedScript(const RE::VMStackID stackID, RE::Actor* targetActor, 
+static bool PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
                                                         std::string_view scriptName);
 
-static std::int32_t GetActiveScriptCount();
+static std::int32_t GetActiveScriptCount(PAPYRUS_NATIVE_DECL);
 
-static SLTSessionId GetSessionId();
+static SLTSessionId GetSessionId(PAPYRUS_NATIVE_DECL);
 
-static bool IsLoaded();
+static bool IsLoaded(PAPYRUS_NATIVE_DECL);
 
-static std::string GetTranslatedString(std::string_view input);
+static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input);
 
-static std::vector<std::string> Tokenize(std::string_view input);
+static std::vector<std::string> Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input);
 
-static bool DeleteTrigger(std::string_view extKeyStr, std::string_view trigKeyStr);
+static bool DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr);
 
-static RE::TESForm* GetForm(std::string_view a_editorID);
+static RE::TESForm* GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID);
 
-static bool SmartEquals(std::string_view a, std::string_view b);
+static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
+
+static void WalkTheStack(PAPYRUS_NATIVE_DECL);
                                 
 // These will attempt auto-contexting
-static void Pung(RE::BSScript::Internal::VirtualMachine* vm, const RE::VMStackID stackId);
+static void Pung(PAPYRUS_NATIVE_DECL);
 
-static bool ExecuteStepAndPending(RE::BSScript::Internal::VirtualMachine* vm, 
-                                    const RE::VMStackID stackId);
+static bool ExecuteStepAndPending(PAPYRUS_NATIVE_DECL);
 
-static void CleanupThreadContext(RE::BSScript::Internal::VirtualMachine* vm, 
-                                    const RE::VMStackID stackId);
+static void CleanupThreadContext(PAPYRUS_NATIVE_DECL);
+
+static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
+
+static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
 };
 #pragma endregion
 
@@ -48,68 +52,79 @@ class SLTPapyrusFunctionProvider : public SLT::binding::PapyrusFunctionProvider<
 public:
     // Static Papyrus function implementations
     static void SetLibrariesForExtensionAllowed(PAPYRUS_STATIC_ARGS, std::string extensionKey, bool allowed) {
-        SLT::SLTNativeFunctions::SetLibrariesForExtensionAllowed(StackID, extensionKey, allowed);
+        SLT::SLTNativeFunctions::SetLibrariesForExtensionAllowed(PAPYRUS_FN_PARMS, extensionKey, allowed);
     }
 
     static bool PrepareContextForTargetedScript(PAPYRUS_STATIC_ARGS, RE::Actor* targetActor, std::string scriptname) {
-        return SLT::SLTNativeFunctions::PrepareContextForTargetedScript(StackID, targetActor, scriptname);
+        return SLT::SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_FN_PARMS, targetActor, scriptname);
     }
 
     static std::int32_t GetActiveScriptCount(PAPYRUS_STATIC_ARGS) {
-        return SLT::SLTNativeFunctions::GetActiveScriptCount();
+        return SLT::SLTNativeFunctions::GetActiveScriptCount(PAPYRUS_FN_PARMS);
     }
 
     static std::int32_t GetSessionId(PAPYRUS_STATIC_ARGS) {
-        return SLT::SLTNativeFunctions::GetSessionId();
+        return SLT::SLTNativeFunctions::GetSessionId(PAPYRUS_FN_PARMS);
     }
 
     static bool IsLoaded(PAPYRUS_STATIC_ARGS) {
-        return SLT::SLTNativeFunctions::IsLoaded();
+        return SLT::SLTNativeFunctions::IsLoaded(PAPYRUS_FN_PARMS);
     }
 
     static std::string GetTranslatedString(PAPYRUS_STATIC_ARGS, const std::string input) {
-        return SLT::SLTNativeFunctions::GetTranslatedString(input);
+        return SLT::SLTNativeFunctions::GetTranslatedString(PAPYRUS_FN_PARMS, input);
     }
 
     static std::vector<std::string> Tokenize(PAPYRUS_STATIC_ARGS, std::string input) {
-        return SLT::SLTNativeFunctions::Tokenize(input);
+        return SLT::SLTNativeFunctions::Tokenize(PAPYRUS_FN_PARMS, input);
     }
 
     static bool DeleteTrigger(PAPYRUS_STATIC_ARGS, std::string extKeyStr, std::string trigKeyStr) {
-        return SLT::SLTNativeFunctions::DeleteTrigger(extKeyStr, trigKeyStr);
+        return SLT::SLTNativeFunctions::DeleteTrigger(PAPYRUS_FN_PARMS, extKeyStr, trigKeyStr);
     }
 
     static RE::TESForm* GetForm(PAPYRUS_STATIC_ARGS, std::string someFormOfFormIdentification) {
-        return SLT::SLTNativeFunctions::GetForm(someFormOfFormIdentification);
+        return SLT::SLTNativeFunctions::GetForm(PAPYRUS_FN_PARMS, someFormOfFormIdentification);
     }
 
     static bool SmartEquals(PAPYRUS_STATIC_ARGS, std::string a, std::string b) {
-        return SLT::SLTNativeFunctions::SmartEquals(a, b);
+        return SLT::SLTNativeFunctions::SmartEquals(PAPYRUS_FN_PARMS, a, b);
+    }
+
+    static void WalkTheStack(PAPYRUS_STATIC_ARGS) {
+        SLT::SLTNativeFunctions::WalkTheStack(PAPYRUS_FN_PARMS);
     }
 
     // These will perform auto-contexting
     static void Pung(PAPYRUS_STATIC_ARGS) {
-        SLT::SLTNativeFunctions::Pung(VirtualMachine, StackID);
+        SLT::SLTNativeFunctions::Pung(PAPYRUS_FN_PARMS);
     }
 
     static bool ExecuteAndPending(PAPYRUS_STATIC_ARGS) {
-        return SLT::SLTNativeFunctions::ExecuteStepAndPending(VirtualMachine, StackID);
+        return SLT::SLTNativeFunctions::ExecuteStepAndPending(PAPYRUS_FN_PARMS);
     }
 
     static void CleanupThreadContext(PAPYRUS_STATIC_ARGS) {
-        SLT::SLTNativeFunctions::CleanupThreadContext(VirtualMachine, StackID);
+        SLT::SLTNativeFunctions::CleanupThreadContext(PAPYRUS_FN_PARMS);
+    }
+    
+
+    static std::string ResolveValueVariable(PAPYRUS_STATIC_ARGS, std::string_view variableName) {
+        return SLT::SLTNativeFunctions::ResolveValueVariable(PAPYRUS_FN_PARMS, variableName);
+    }
+
+    static RE::TESForm* ResolveFormVariable(PAPYRUS_STATIC_ARGS, std::string_view variableName) {
+        return SLT::SLTNativeFunctions::ResolveFormVariable(PAPYRUS_FN_PARMS, variableName);
     }
 
     void RegisterAllFunctions(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) {
         SLT::binding::PapyrusRegistrar<SLTPapyrusFunctionProvider> reg(vm, className);
         
-        // Only pure utility functions get tasklet access
+        reg.RegisterStatic("WalkTheStack", &SLTPapyrusFunctionProvider::WalkTheStack);
         reg.RegisterStatic("SmartEquals", &SLTPapyrusFunctionProvider::SmartEquals);
         reg.RegisterStatic("Tokenize", &SLTPapyrusFunctionProvider::Tokenize);
         reg.RegisterStatic("GetSessionId", &SLTPapyrusFunctionProvider::GetSessionId);
         reg.RegisterStatic("IsLoaded", &SLTPapyrusFunctionProvider::IsLoaded);
-        
-        // Everything else stays frame-synced for safety
         reg.RegisterStatic("SetLibrariesForExtensionAllowed", &SLTPapyrusFunctionProvider::SetLibrariesForExtensionAllowed);
         reg.RegisterStatic("PrepareContextForTargetedScript", &SLTPapyrusFunctionProvider::PrepareContextForTargetedScript);
         reg.RegisterStatic("GetActiveScriptCount", &SLTPapyrusFunctionProvider::GetActiveScriptCount);
@@ -119,6 +134,8 @@ public:
         reg.RegisterStatic("Pung", &SLTPapyrusFunctionProvider::Pung);
         reg.RegisterStatic("ExecuteAndPending", &SLTPapyrusFunctionProvider::ExecuteAndPending);
         reg.RegisterStatic("CleanupThreadContext", &SLTPapyrusFunctionProvider::CleanupThreadContext);
+        reg.RegisterStatic("ResolveValueVariable", &SLTPapyrusFunctionProvider::ResolveValueVariable);
+        reg.RegisterStatic("ResolveFormVariable", &SLTPapyrusFunctionProvider::ResolveFormVariable);
     }
 };
 
@@ -130,7 +147,7 @@ REGISTER_PAPYRUS_PROVIDER(SLTPapyrusFunctionProvider, "sl_triggers_internal")
 // SLTNativeFunctions implementation remains the same below
 
 #pragma region SLTNativeFunctions definition
-void SLTNativeFunctions::SetLibrariesForExtensionAllowed(const RE::VMStackID stackId,std::string_view extensionKey, 
+void SLTNativeFunctions::SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
                                         bool allowed) {
     FunctionLibrary* funlib = FunctionLibrary::ByExtensionKey(extensionKey);
 
@@ -142,31 +159,26 @@ void SLTNativeFunctions::SetLibrariesForExtensionAllowed(const RE::VMStackID sta
     }
 }
 
-bool SLTNativeFunctions::PrepareContextForTargetedScript(const RE::VMStackID stackId, RE::Actor* targetActor, 
+bool SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
                                         std::string_view scriptName) {
-    if (!targetActor || scriptName.empty()) {
-        logger::error("Invalid parameters for PrepareContextForTargetedScript");
-        return false;
-    }
-    
     //SLTStackAnalyzer::Walk(stackId);
     auto& manager = ContextManager::GetSingleton();
     return static_cast<std::int32_t>(manager.StartSLTScript(targetActor, scriptName));
 }
 
-std::int32_t SLTNativeFunctions::GetActiveScriptCount() {
+std::int32_t SLTNativeFunctions::GetActiveScriptCount(PAPYRUS_NATIVE_DECL) {
     return static_cast<std::int32_t>(ContextManager::GetSingleton().GetActiveContextCount());
 }
     
-SLTSessionId SLTNativeFunctions::GetSessionId() {
+SLTSessionId SLTNativeFunctions::GetSessionId(PAPYRUS_NATIVE_DECL) {
     return SLT::GenerateNewSessionId();
 }
 
-bool SLTNativeFunctions::IsLoaded() {
+bool SLTNativeFunctions::IsLoaded(PAPYRUS_NATIVE_DECL) {
     return true;
 }
 
-std::string SLTNativeFunctions::GetTranslatedString(std::string_view input) {
+std::string SLTNativeFunctions::GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input) {
     auto sfmgr = RE::BSScaleformManager::GetSingleton();
     if (!(sfmgr)) {
         return std::string(input);
@@ -203,7 +215,7 @@ std::string SLTNativeFunctions::GetTranslatedString(std::string_view input) {
     return std::string(input);
 }
 
-std::vector<std::string> SLTNativeFunctions::Tokenize(std::string_view input) {
+std::vector<std::string> SLTNativeFunctions::Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input) {
     std::vector<std::string> tokens;
     std::string current;
     bool inQuotes = false;
@@ -275,7 +287,7 @@ std::vector<std::string> SLTNativeFunctions::Tokenize(std::string_view input) {
     return tokens;
 }
 
-bool SLTNativeFunctions::DeleteTrigger(std::string_view extKeyStr, std::string_view trigKeyStr) {
+bool SLTNativeFunctions::DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr) {
     if (!SystemUtil::File::IsValidPathComponent(extKeyStr) || !SystemUtil::File::IsValidPathComponent(trigKeyStr)) {
         logger::error("Invalid characters in extensionKey ({}) or triggerKey ({})", extKeyStr, trigKeyStr);
         return false;
@@ -309,40 +321,41 @@ bool SLTNativeFunctions::DeleteTrigger(std::string_view extKeyStr, std::string_v
     }
 }
 
-RE::TESForm* SLTNativeFunctions::GetForm(std::string_view a_editorID) {
+RE::TESForm* SLTNativeFunctions::GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID) {
     return FormUtil::Parse::GetForm(a_editorID);
 }
 
-bool SLTNativeFunctions::SmartEquals(std::string_view a, std::string_view b) {
+bool SLTNativeFunctions::SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b) {
     return SmartComparator::SmartEquals(std::string(a), std::string(b));
 }
 
-void SLTNativeFunctions::Pung(RE::BSScript::Internal::VirtualMachine* vm, 
-                                const RE::VMStackID stackId) {
+void SLTNativeFunctions::WalkTheStack(PAPYRUS_NATIVE_DECL) {
+    SLTStackAnalyzer::Walk(stackId);
+}
+
+void SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL) {
     if (!vm)
         return;
     
     //SLTStackAnalyzer::Walk(stackId);
-    // technically this should be sufficient to populate the caller if it is possible
     std::ignore = SLTStackAnalyzer::GetAMEContextInfo(stackId);
 }
 
-bool SLTNativeFunctions::ExecuteStepAndPending(RE::BSScript::Internal::VirtualMachine* vm, 
-                                const RE::VMStackID stackId) {
+bool SLTNativeFunctions::ExecuteStepAndPending(PAPYRUS_NATIVE_DECL) {
     if (!vm) return false;
     
     auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
     
-    if (!contextInfo.isValid || contextInfo.contextId == 0) {
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
         logger::error("ExecuteStepAndPending called without valid threadContextHandle property");
         return false;
     }
     
     auto& manager = ContextManager::GetSingleton();
-    auto* context = manager.GetContext(contextInfo.contextId);
+    auto* context = manager.GetContext(contextInfo.handle);
     
     if (!context) {
-        logger::error("No active context found for ID: {}", contextInfo.contextId);
+        logger::error("No active context found for ID: {}", contextInfo.handle);
         return false;
     }
     
@@ -350,21 +363,44 @@ bool SLTNativeFunctions::ExecuteStepAndPending(RE::BSScript::Internal::VirtualMa
     return context->ExecuteNextStep(contextInfo);
 }
 
-void SLTNativeFunctions::CleanupThreadContext(RE::BSScript::Internal::VirtualMachine* vm, 
-                            const RE::VMStackID stackId) {
+void SLTNativeFunctions::CleanupThreadContext(PAPYRUS_NATIVE_DECL) {
     if (!vm) return;
     
     auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
     
-    if (!contextInfo.isValid || contextInfo.contextId == 0) {
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
         logger::error("CleanupThreadContext called without valid threadContextHandle property");
         return;
     }
     
     auto& manager = ContextManager::GetSingleton();
-    manager.CleanupContext(contextInfo.contextId);
+    manager.CleanupContext(contextInfo.handle);
+}
+
+std::string SLTNativeFunctions::ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
+    if (!vm) return "";
     
-    logger::info("Cleaned up context {} from authenticated script call", contextInfo.contextId);
+    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
+    
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
+        logger::error("ResolveValueVariable called without valid threadContextHandle property");
+        return "";
+    }
+
+    return ContextManager::GetSingleton().ResolveValueVariable(contextInfo.frame, token);
+}
+
+RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
+    if (!vm) return nullptr;
+    
+    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
+    
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
+        logger::error("ResolveFormVariable called without valid threadContextHandle property");
+        return nullptr;
+    }
+
+    return ContextManager::GetSingleton().ResolveFormVariable(contextInfo.frame, token);
 }
 
 #pragma endregion
@@ -375,7 +411,7 @@ OnDataLoaded([]{
     auto* serialization = SKSE::GetSerializationInterface();
     if (serialization) {
         serialization->SetSaveCallback([](SKSE::SerializationInterface* intfc) {
-            if (intfc->OpenRecord('SLTD', 1)) {
+            if (intfc->OpenRecord('SLTR', 1)) {
                 ContextManager::GetSingleton().Serialize(intfc);
             }
         });
@@ -383,7 +419,7 @@ OnDataLoaded([]{
         serialization->SetLoadCallback([](SKSE::SerializationInterface* intfc) {
             std::uint32_t type, version, length;
             while (intfc->GetNextRecordInfo(type, version, length)) {
-                if (type == 'SLTD' && version == 1) {
+                if (type == 'SLTR' && version == 1) {
                     ContextManager::GetSingleton().Deserialize(intfc);
                 }
             }
@@ -408,7 +444,7 @@ OnPostLoadGame([]{
     // Resume execution after load completes
     SLT::GenerateNewSessionId(true);
     ContextManager::GetSingleton().ResumeExecution();
-    logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::SLTNativeFunctions::GetSessionId());
+    logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::GetSessionId());
 });
 
 OnSaveGame([]{

@@ -31,6 +31,7 @@ extern const std::string_view BASE_AME;
     
 fs::path GetPluginPath();
 SLTSessionId GenerateNewSessionId(bool force = false);
+SLTSessionId GetSessionId();
 
 using SLTValue = std::variant<
     std::monostate,    // null/none

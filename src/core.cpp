@@ -25,4 +25,8 @@ SLTSessionId GenerateNewSessionId(bool force) {
     return sessionId;
 }
 
+SLTSessionId GetSessionId() {
+    return sessionId;
+}
+
 }
