@@ -1,6 +1,7 @@
 set(sources ${sources}
     src/contexting.cpp
     src/core.cpp
+    src/coroutines.cpp
     src/engine.cpp
     src/main.cpp
     src/parsing.cpp

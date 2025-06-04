@@ -4,69 +4,78 @@
 
 namespace SLT {
 
-/*
-Add SLTExtension
-    - isenabled flag
-    - extensionKey
-    - friendly name
-    - priority
-    - bool CustomResolveValue(sl_triggersCmd, string code)
-        wrapper around Papyrus function
-        sets CustomResolveResult (use if func returned true)
-    - bool CustomResolveForm(sl_triggersCmd, string code)
-        wrapper around Papyrus function
-        sets CustomResolveFormResult (use if func returned true)
-*/
+class FrameContext;
+
+class SLTExtension {
+public:
+    RE::TESQuest* quest;
+    bool enabled;
+    std::string key;
+    std::string friendlyName;
+    std::int32_t priority;
+
+    explicit SLTExtension(RE::TESQuest* _quest, bool _enabled, std::string _key, std::string _friendlyName, std::int32_t _priority)
+        : quest(_quest), enabled(_enabled), key(_key), friendlyName(_friendlyName), priority(_priority)
+        {}
+
+    std::optional<RE::TESForm*> CustomResolveForm(std::string_view token, FrameContext* frame);
+};
 
 class SLTExtensionTracker {
 private:
-    std::vector<RE::TESQuest*> trackedQuests;
-    std::string_view targetBaseScript;
-    mutable std::shared_mutex questsMutex;
+    static std::shared_mutex questsMutex;
+    static std::vector<std::unique_ptr<SLTExtension>> quests;
+
+    static std::unordered_map<std::string, SLTExtension*> questsByKey;
+    static std::unordered_map<RE::TESQuest*, SLTExtension*> questsByQuest;
     
-    SLTExtensionTracker(std::string_view baseScript) : targetBaseScript(baseScript) {}
+    SLTExtensionTracker() = delete;
 
 public:
-    static SLTExtensionTracker& GetSingleton() {
-        static SLTExtensionTracker singleton(SLT::BASE_QUEST);
-        return singleton;
-    }
-    
-    std::vector<RE::TESQuest*> GetTrackedQuests() const {
-        std::shared_lock lock(questsMutex);
-        return trackedQuests;
-    }
-    
-    bool IsQuestTracked(RE::TESQuest* quest) const {
-        std::shared_lock lock(questsMutex);
-        return std::find(trackedQuests.begin(), trackedQuests.end(), quest) != trackedQuests.end();
-    }
-    
-    size_t GetTrackedQuestCount() const {
-        std::shared_lock lock(questsMutex);
-        return trackedQuests.size();
-    }
-    
-    void AddQuest(RE::TESQuest* quest) {
-        if (!quest) return;
-        
-        std::unique_lock lock(questsMutex);
-        auto it = std::find(trackedQuests.begin(), trackedQuests.end(), quest);
-        if (it == trackedQuests.end()) {
-            trackedQuests.push_back(quest);
-            logger::info("Added SLT extension quest: {}", quest->GetName());
+    template <typename Func>
+    static auto ReadData(Func&& fn) {
+        try {
+            std::shared_lock<std::shared_mutex> lock(questsMutex);
+            return fn(quests, questsByKey, questsByQuest);
+        } catch (...) {
+            throw;
         }
     }
-    
-    void RemoveQuest(RE::TESQuest* quest) {
-        std::unique_lock lock(questsMutex);
-        auto it = std::find(trackedQuests.begin(), trackedQuests.end(), quest);
-        if (it != trackedQuests.end()) {
-            trackedQuests.erase(it);
-            logger::info("Removed SLT extension quest: {}", quest->GetName());
+
+    template <typename Func>
+    static auto WriteData(Func&& fn) {
+        try {
+            std::unique_lock<std::shared_mutex> lock(questsMutex);
+            return fn(quests, questsByKey, questsByQuest);
+        } catch (...) {
+            throw;
         }
     }
+
+    static SLTExtension* GetExtension(std::string_view extensionKey) {
+        if (extensionKey.size() > 0) {
+            std::shared_lock lock(questsMutex);
+            auto it = questsByKey.find(std::string(extensionKey));
+            if (it != questsByKey.end()) {
+                return it->second;
+            }
+        }
+        return nullptr;
+    }
+
+    static bool IsEnabled(std::string_view extensionKey) {
+        if (auto* ext = GetExtension(extensionKey)) {
+            return ext->enabled;
+        } else {
+            logger::warn("No extension with key ({})", extensionKey);
+        }
+        return false;
+    }
     
+    static void AddQuest(RE::TESQuest* quest, RE::VMStackID stackId);
+
+    // no need for RemoveQuest; SLTExtensionTracker is essentially transient itself
+    // being recreated wholly at game launch
 };
 
 

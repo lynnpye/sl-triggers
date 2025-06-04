@@ -55,6 +55,8 @@ public:
 
     static bool AdvanceToNextRunnableStep(FrameContext* frame);
 
+    static RE::TESForm* ResolveFormVariable(std::string_view token, FrameContext* frame);
+
 private:
     Salty(const Salty&) = delete;
     Salty& operator=(const Salty&) = delete;

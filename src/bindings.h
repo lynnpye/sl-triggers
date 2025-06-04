@@ -36,9 +36,8 @@ namespace SLT {
             
             // Static latent function registration
             template<typename Return, typename... Args>
-            void RegisterStaticLatent(std::string_view name, Return(*func)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...), bool callableFromTasklets = false) {
-                auto wrapper = reinterpret_cast<Return(*)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...)>(func);
-                vm_->RegisterLatentFunction(name, className_, wrapper, callableFromTasklets);
+            void RegisterStaticLatent(std::string_view name, RE::BSScript::LatentStatus(*func)(RE::BSScript::Internal::VirtualMachine*, RE::VMStackID, RE::StaticFunctionTag*, Args...), bool callableFromTasklets = false) {
+                vm_->RegisterLatentFunction<Return>(name, className_, func, callableFromTasklets);
             }
             
             // Instance function registration (for future use)

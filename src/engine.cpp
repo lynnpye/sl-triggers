@@ -1,6 +1,8 @@
 #include "engine.h"
 #include "contexting.h"
 #include "parsing.h"
+#include "questor.h"
+#include "coroutines.h"
 
 using namespace SLT;
 
@@ -224,37 +226,14 @@ using namespace SLT;
     };
 
     
-/*
-Actual rules:
-bool needslt
-bool resolved
-for i : 0 .. extensions.length
-    ext = extensions[i]
-    if needslt && ext.priority >= 0
-        needslt = false
-        IF MANAGER.HASVAR
-            return manager.getvar
-        ENDIF
-    else
-
-    resolved = ext.customresolve
-    if resolved
-        return cmdPrimary.CustomResolveResult
-    endif
-endfor
-*/
     // Core resolution function - this is where the magic happens
     // NOTE: All variable access now goes through ContextManager's coordination lock
     std::string ResolveValueVariable(std::string_view token, FrameContext* frame) {
         return ContextManager::GetSingleton().ResolveValueVariable(frame, token);
     }
 
-    RE::TESForm* ResolveFormVariable(std::string_view token, FrameContext* frame) {
-        return ContextManager::GetSingleton().ResolveFormVariable(frame, token);
-    }
-
     RE::Actor* ResolveActorVariable(std::string_view token, FrameContext* frame) {
-        RE::TESForm* form = ResolveFormVariable(token, frame);
+        RE::TESForm* form = Salty::ResolveFormVariable(token, frame);
 
         if (!form) {
             return RE::PlayerCharacter::GetSingleton();
@@ -586,9 +565,9 @@ endfor
         return success;
     }
 
-    bool TryExecuteExtensionFunction(const std::vector<std::string>& tokens, FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& contextInfo) {
+    bool TryFunctionLibrary(const std::vector<std::string>& tokens, FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& contextInfo) {
         if (!frame || !frame->thread || !frame->thread->target) {
-            logger::error("TryExecuteExtensionFunction: frame, frame->thread, or frame->thread->target is null");
+            logger::error("TryFunctionLibrary: frame, frame->thread, or frame->thread->target is null");
             return false;
         }
         
@@ -600,12 +579,38 @@ endfor
         
         return RunOperationOnActor(contextInfo.target, contextInfo.ame, param);
     }
+
 }
+
 #pragma endregion
 
 // Public interface implementations - these are the only functions exposed in engine.h
 
 #pragma region Salty definitions
+
+RE::TESForm* Salty::ResolveFormVariable(std::string_view token, FrameContext* frame) {
+    return SLTExtensionTracker::ReadData([&token, frame](const auto& quests, const auto& questsByKey, const auto& questsByQuest) -> RE::TESForm* {
+        bool triedSLT = false;
+
+        for (auto& quest : quests) {
+            if (!triedSLT && quest->priority >= 0) {
+                triedSLT = true;
+                if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
+                    return frame->customResolveFormResult;
+                }
+            }
+            
+            // Extension form resolution using promise/future
+            if (auto optForm = quest->CustomResolveForm(token, frame)) {
+                return optForm.value();
+            }
+        }
+        
+        // No extension could resolve the token
+        return nullptr;
+    });
+}
+
 bool Salty::ParseScript(FrameContext* frame) {
     try {
         Parser::ParseScript(frame);
@@ -694,7 +699,7 @@ bool Salty::RunStep(FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& conte
         // Check if it's a label (shouldn't execute)
         std::string labelName = ExtractLabelName(cmdLine->tokens, frame->commandType);
         if (labelName.empty()) {
-            if (TryExecuteExtensionFunction(cmdLine->tokens, frame, contextInfo)) {
+            if (TryFunctionLibrary(cmdLine->tokens, frame, contextInfo)) {
                 frame->currentLine++;
                 frame->isReadied = false;
                 return false;

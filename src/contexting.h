@@ -210,8 +210,10 @@ private:
             
             // Get the property iterator from ObjectTypeInfo
             const auto* propIter = typeInfo->GetPropertyIter();
+
+            std::uint32_t MAX_PROPERTIES = 40;
             
-            for (std::uint32_t i = 0; i < propCount && i < 10; ++i) { // Limit to first 10 properties
+            for (std::uint32_t i = 0; i < propCount && i < MAX_PROPERTIES; ++i) { // Limit to first 10 properties
                 try {
                     if (propIter) {
                         const auto& propInfo = propIter[i];
@@ -381,6 +383,7 @@ inline void LogVariableError(const RE::BSScript::Variable& var,
 class SLTStackAnalyzer {
 public:
     struct AMEContextInfo {
+        RE::VMStackID stackId;
         FrameContext* frame;
         ThreadContextHandle handle = 0;
         std::string initialScriptName;
@@ -428,7 +431,7 @@ private:
     
     // Data members (protected by coordinationLock)
     std::unordered_map<RE::FormID, std::unique_ptr<TargetContext>> targetContexts;
-    std::unordered_map<ThreadContextHandle, ThreadContext*> activeContexts;
+    std::unordered_map<ThreadContextHandle, std::shared_ptr<ThreadContext>> activeContexts;
     std::map<std::string, std::string> globalVars;
 
     // Separate execution control (different concern, different mutex)
@@ -545,12 +548,12 @@ public:
     bool HasVar(FrameContext* frame, std::string_view name) const;
 
     std::string ResolveValueVariable(FrameContext* frame, std::string_view token) const;
-    RE::TESForm* ResolveFormVariable(FrameContext* frame, std::string_view token) const;
+    bool ResolveFormVariable(FrameContext* frame, std::string_view token) const;
 
-    ThreadContextHandle StartSLTScript(RE::Actor* target, std::string_view initialScriptName);
+    bool StartSLTScript(RE::Actor* target, std::string_view initialScriptName);
 
-    ThreadContext* GetContext(ThreadContextHandle contextId) const {
-        return ReadData([contextId](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> ThreadContext* {
+    std::shared_ptr<ThreadContext> GetContext(ThreadContextHandle contextId) const {
+        return ReadData([contextId](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> std::shared_ptr<ThreadContext> {
             auto it = activeContexts.find(contextId);
             return (it != activeContexts.end()) ? it->second : nullptr;
         });
@@ -610,7 +613,7 @@ public:
     RE::FormID tesTargetFormID;
     RE::TESForm* tesTarget;
 
-    std::vector<std::unique_ptr<ThreadContext>> threads;
+    std::vector<std::shared_ptr<ThreadContext>> threads;
     std::map<std::string, std::string> targetVars;
 
     RE::Actor* AsActor() const {
@@ -763,6 +766,9 @@ public:
 
     ThreadContext* thread;
     std::string scriptName;
+
+    // transient
+    RE::TESForm* customResolveFormResult;
 
     bool isReady;
     bool isReadied;
