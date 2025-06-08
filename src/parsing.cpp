@@ -212,7 +212,6 @@ std::unique_ptr<CommandLine> INIParser::ParseINILine(std::string_view line, std:
         labelName = Util::String::trim(labelName);
         if (!labelName.empty()) {
             std::string normalizedLabel = "[" + labelName + "]";
-            logger::debug("making label({})", normalizedLabel);
             return CreateCommandLine(lineNumber, {normalizedLabel});
         }
         return nullptr;

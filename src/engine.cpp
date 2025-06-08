@@ -197,6 +197,10 @@ bool FunctionLibrary::PrecacheLibraries() {
 }
 
 OnDataLoaded([]{
+    {
+    fs::path debugmsg_log = GetPluginPath() / "debugmsg.log";
+    std::ofstream file(debugmsg_log, std::ios::trunc);
+    }
     FunctionLibrary::PrecacheLibraries();
 })
 #pragma endregion
@@ -306,6 +310,7 @@ using namespace SLT;
             return;
         }
         
+        logger::debug("Set Command [({})]", str::Join(tokens, "), ("));
         std::string value = ResolveValueVariable(tokens[2], frame);
         
         // Handle arithmetic operations: set $var $val1 + $val2
@@ -313,20 +318,29 @@ using namespace SLT;
             std::string val1 = value;
             std::string op = tokens[3];
             std::string val2 = ResolveValueVariable(tokens[4], frame);
+            float _flt1 = 0.0f;
+            float _flt2 = 0.0f;
             
             if (op == "+") {
-                float result = std::stof(val1) + std::stof(val2);
+                _flt1 = str::TryToFloat(val1);
+                _flt2 = str::TryToFloat(val2);
+                float result = _flt1 + _flt2;
                 value = std::to_string(result);
             } else if (op == "-") {
-                float result = std::stof(val1) - std::stof(val2);
+                _flt1 = str::TryToFloat(val1);
+                _flt2 = str::TryToFloat(val2);
+                float result = _flt1 - _flt2;
                 value = std::to_string(result);
             } else if (op == "*") {
-                float result = std::stof(val1) * std::stof(val2);
+                _flt1 = str::TryToFloat(val1);
+                _flt2 = str::TryToFloat(val2);
+                float result = _flt1 * _flt2;
                 value = std::to_string(result);
             } else if (op == "/") {
-                float val2f = std::stof(val2);
-                if (val2f != 0.0f) {
-                    float result = std::stof(val1) / val2f;
+                _flt1 = str::TryToFloat(val1);
+                _flt2 = str::TryToFloat(val2);
+                if (_flt2 != 0.0f) {
+                    float result = _flt1 / _flt2;
                     value = std::to_string(result);
                 } else {
                     FrameLogWarn(frame, "Division by zero in SET command");
@@ -354,6 +368,8 @@ using namespace SLT;
         std::string op = tokens[2];
         std::string val2 = ResolveValueVariable(tokens[3], frame);
         std::string target = ResolveValueVariable(tokens[4], frame);
+        float _flt1 = 0.0f;
+        float _flt2 = 0.0f;
         
         bool condition = false;
         if (op == "=" || op == "==" || op == "&=") {
@@ -361,13 +377,21 @@ using namespace SLT;
         } else if (op == "!=" || op == "<>" || op == "&!=") {
             condition = !SmartComparator::SmartEquals(val1, val2);
         } else if (op == ">") {
-            condition = std::stof(val1) > std::stof(val2);
+            _flt1 = str::TryToFloat(val1);
+            _flt2 = str::TryToFloat(val2);
+            condition = _flt1 > _flt2;
         } else if (op == ">=") {
-            condition = std::stof(val1) >= std::stof(val2);
+            _flt1 = str::TryToFloat(val1);
+            _flt2 = str::TryToFloat(val2);
+            condition = _flt1 >= _flt2;
         } else if (op == "<") {
-            condition = std::stof(val1) < std::stof(val2);
+            _flt1 = str::TryToFloat(val1);
+            _flt2 = str::TryToFloat(val2);
+            condition = _flt1 < _flt2;
         } else if (op == "<=") {
-            condition = std::stof(val1) <= std::stof(val2);
+            _flt1 = str::TryToFloat(val1);
+            _flt2 = str::TryToFloat(val2);
+            condition = _flt1 <= _flt2;
         } else {
             FrameLogWarn(frame, "Unknown operator in IF command: {}", op);
             return;
@@ -424,26 +448,22 @@ using namespace SLT;
         
         std::string scriptName = ResolveValueVariable(tokens[1], frame);
         
-        // Store call arguments
-        frame->callArgs.clear();
-        for (size_t i = 2; i < tokens.size(); ++i) {
-            frame->callArgs.push_back(ResolveValueVariable(tokens[i], frame));
-        }
-        
         // Push new frame context - THIS IS THE ONLY PLACE THAT SHOULD PUSH CALL STACK
         FrameContext* newFrame = frame->thread->PushFrameContext(scriptName);
         if (!newFrame) {
             FrameLogError(frame, "Failed to create new frame for CALL to: {}", scriptName);
         }
+        else {
+            for (size_t i = 2; i < tokens.size(); ++i) {
+                newFrame->callArgs.push_back(ResolveValueVariable(tokens[i], frame));
+            }
+            newFrame->IsReady();
+        }
     }
 
     void ExecuteReturnCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         // Pop current frame from call stack - THIS IS THE ONLY PLACE THAT SHOULD POP CALL STACK
-        bool hasReadyFrame = frame->thread->PopFrameContext();
-        if (!hasReadyFrame) {
-            // No ready frame to return to - this thread is done
-            FrameLogInfo(frame, "RETURN command completed - no more frames to execute");
-        }
+        frame->currentLine = frame->scriptTokens.size(); // signal we are done
         // If PopFrameContext() returns true, execution will continue with the previous frame
         // If it returns false, the thread has no more work to do
     }
@@ -539,6 +559,8 @@ using namespace SLT;
             logger::error("TryFunctionLibrary: frame, frame->thread, or frame->thread->target is null");
             return false;
         }
+
+        logger::debug("TryFunctionLibrary({})", tokens[0]);
         
         // Convert resolved tokens to BSFixedString vector
         std::vector<RE::BSFixedString> param;
@@ -546,7 +568,7 @@ using namespace SLT;
             param.push_back(ResolveValueVariable(token, frame));
         }
         
-        return FormResolver::RunOperationOnActor(contextInfo.target, contextInfo.ame, param);
+        return FormResolver::RunOperationOnActor(frame, contextInfo.target, contextInfo.ame, param);
     }
 
 }
@@ -558,12 +580,22 @@ using namespace SLT;
 #pragma region Salty definitions
 
 RE::TESForm* Salty::ResolveFormVariable(std::string_view token, FrameContext* frame) {
+    if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
+        return frame->customResolveFormResult;
+    }
+    
+    // No extension could resolve the token
+    return nullptr;
+/*
     return SLTExtensionTracker::ReadData([&token, frame](const auto& quests, const auto& questsByKey, const auto& questsByQuest) -> RE::TESForm* {
         bool triedSLT = false;
-
         for (auto& quest : quests) {
             if (quest->priority >= 0)
                 continue;
+            if (!quest->enabled) {
+                logger::info("Skipping key({}) for form resolution", quest->key);
+                continue;
+            }
             // Extension form resolution using promise/future
             if (auto optForm = quest->CustomResolveForm(token, frame)) {
                 return optForm.value();
@@ -577,15 +609,24 @@ RE::TESForm* Salty::ResolveFormVariable(std::string_view token, FrameContext* fr
         for (auto& quest : quests) {
             if (quest->priority < 0)
                 continue;
+            if (!quest->enabled) {
+                logger::info("Skipping key({}) for form resolution", quest->key);
+                continue;
+            }
             // Extension form resolution using promise/future
             if (auto optForm = quest->CustomResolveForm(token, frame)) {
                 return optForm.value();
             }
         }
+
+        if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
+            return frame->customResolveFormResult;
+        }
         
         // No extension could resolve the token
         return nullptr;
     });
+*/
 }
 
 bool Salty::ParseScript(FrameContext* frame) {

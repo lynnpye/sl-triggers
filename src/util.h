@@ -124,6 +124,7 @@ namespace Util
         static std::vector<float> ToFloatVector(const std::vector<std::string> stringVector);
         static std::string ToLower(std::string_view a_str);
 		static std::string ToUpper(std::string_view a_str);
+        static float TryToFloat(std::string_view strval);
 
         template<typename T>
         static std::string ToHex(T value) {

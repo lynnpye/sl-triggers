@@ -57,8 +57,12 @@ static void ResumeExecution(PAPYRUS_NATIVE_DECL);
 static void SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
                                             RE::TESForm* resultingForm);
 
-static void SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
-                                            bool allowed);
+static void SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionKey,
+                                            bool enabledState);
+
+
+//static void SetMostRecentResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
+//                                            std::string_view mostRecentResult);
 
 static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
 
@@ -81,7 +85,7 @@ public:
         return SLT::SLTNativeFunctions::GetForm(PAPYRUS_FN_PARMS, someFormOfFormIdentification);
     }
 
-    static std::vector<std::string> GetScriptsList(PAPYRUS_STATIC_ARGS, std::string_view input) {
+    static std::vector<std::string> GetScriptsList(PAPYRUS_STATIC_ARGS) {
         return SLT::SLTNativeFunctions::GetScriptsList(PAPYRUS_FN_PARMS);
     }
 
@@ -183,8 +187,8 @@ public:
         SLT::SLTNativeFunctions::SetCustomResolveFormResult(PAPYRUS_FN_PARMS, threadContextHandle, resultingForm);
     }
 
-    static void SetLibrariesForExtensionAllowed(PAPYRUS_STATIC_ARGS, std::string extensionKey, bool allowed) {
-        SLT::SLTNativeFunctions::SetLibrariesForExtensionAllowed(PAPYRUS_FN_PARMS, extensionKey, allowed);
+    static void SetExtensionEnabled(PAPYRUS_STATIC_ARGS, std::string_view extensionKey, bool enabledState) {
+        SLT::SLTNativeFunctions::SetExtensionEnabled(PAPYRUS_FN_PARMS, extensionKey, enabledState);
     }
 
     static void WalkTheStack(PAPYRUS_STATIC_ARGS) {
@@ -207,7 +211,7 @@ public:
         reg.RegisterStatic("ResolveValueVariable", &SLTInternalPapyrusFunctionProvider::ResolveValueVariable);
         reg.RegisterStatic("ResumeExecution", &SLTInternalPapyrusFunctionProvider::ResumeExecution);
         reg.RegisterStatic("SetCustomResolveFormResult", &SLTInternalPapyrusFunctionProvider::SetCustomResolveFormResult);
-        reg.RegisterStatic("SetLibrariesForExtensionAllowed", &SLTInternalPapyrusFunctionProvider::SetLibrariesForExtensionAllowed);
+        reg.RegisterStatic("SetExtensionEnabled", &SLTInternalPapyrusFunctionProvider::SetExtensionEnabled);
         reg.RegisterStatic("WalkTheStack", &SLTInternalPapyrusFunctionProvider::WalkTheStack);
     }
 };
@@ -544,6 +548,7 @@ void SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL) {
 
                     if (it != targetContext->threads.end()) {
                         auto& threadCon = *it;
+                        threadCon->ame = ame;
                         propThreadContextHandle->SetSInt(threadCon->threadContextHandle);
                         propInitialScriptName->SetString(threadCon->initialScriptName);
                     }
@@ -570,8 +575,12 @@ void SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL) {
 }
 
 void SLTNativeFunctions::RegisterExtension(PAPYRUS_NATIVE_DECL, RE::TESQuest* extensionQuest) {
+    if (!extensionQuest) {
+        logger::error("extensionQuest is required for RegisterExtension");
+        return;
+    }
     SLTExtensionTracker::AddQuest(extensionQuest, stackId);
-    SLT::ModEvent::SendToAll("_slt_event_slt_register_extension_", static_cast<RE::TESQuest*>(extensionQuest));
+    SLT::ModEvent::SendToAll("OnSLTRegisterExtension", static_cast<RE::TESQuest*>(extensionQuest));
 }
 
 RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
@@ -617,15 +626,15 @@ void SLTNativeFunctions::SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadC
     frame->customResolveFormResult = resultingForm;
 }
 
-void SLTNativeFunctions::SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
-                                        bool allowed) {
+void SLTNativeFunctions::SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, bool enabledState) {
+    SLTExtensionTracker::SetEnabled(extensionKey, enabledState);
     FunctionLibrary* funlib = FunctionLibrary::ByExtensionKey(extensionKey);
 
     //SLTStackAnalyzer::Walk(stackId);
     if (funlib) {
-        funlib->enabled = allowed;
+        funlib->enabled = enabledState;
     } else {
-        logger::error("Unable to find function library for extensionKey '{}' to set enabled to '{}'", extensionKey, allowed);
+        logger::error("Unable to find function library for extensionKey '{}' to set enabled to '{}'", extensionKey, enabledState);
     }
 }
 

@@ -7,84 +7,7 @@
 
 namespace SLT {
 
-RE::TESForm* FormResolver::CallCustomResolveForm(RE::TESQuest* quest, 
-                                                std::string_view token, 
-                                                RE::Actor* targetActor, 
-                                                ThreadContextHandle threadHandle) {
-    if (!quest || !targetActor) {
-        return nullptr;
-    }
-    
-    auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-    if (!vm) {
-        logger::error("Failed to get VM singleton for CustomResolveForm");
-        return nullptr;
-    }
-    
-    // Clear any previous result in the frame
-    auto* frame = ContextManager::GetSingleton().GetFrameContext(threadHandle);
-    if (!frame) {
-        logger::error("Failed to get frame context for threadHandle {}", threadHandle);
-        return nullptr;
-    }
-    frame->customResolveFormResult = nullptr;
-    
-    // Create promise/future pair
-    std::promise<bool> resultPromise;
-    std::future<bool> resultFuture = resultPromise.get_future();
-    
-    // Create callback
-    RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
-    callback.reset(new FormResolutionCallback(std::move(resultPromise)));
-    
-    // Convert quest to Papyrus object
-    auto papyrusQuest = PapyrusConverter::ToPapyrusObject(quest);
-    if (!papyrusQuest) {
-        logger::error("Failed to convert quest to Papyrus object");
-        return nullptr;
-    }
-    
-    // Prepare arguments: CustomResolveForm(string token, Actor targetActor, int threadContextHandle)
-    auto args = RE::MakeFunctionArguments(
-        std::string{token},
-        static_cast<RE::Actor*>(targetActor),
-        static_cast<std::int32_t>(threadHandle)
-    );
-    
-    // Dispatch the call to main Papyrus thread
-    bool dispatched = vm->DispatchMethodCall(papyrusQuest, "CustomResolveForm", args, callback);
-    if (!dispatched) {
-        logger::error("Failed to dispatch CustomResolveForm call");
-        return nullptr;
-    }
-    
-    // Wait for the result (this blocks the background thread, NOT the main Papyrus thread)
-    auto status = resultFuture.wait_for(std::chrono::seconds(5));
-    if (status == std::future_status::ready) {
-        try {
-            bool resolved = resultFuture.get();
-            if (resolved) {
-                // Extension called SetCustomResolveFormResult and returned true
-                auto* resultForm = frame->customResolveFormResult;
-                logger::debug("CustomResolveForm resolved token '{}' to form 0x{:X}", 
-                              token, resultForm ? resultForm->GetFormID() : 0);
-                return resultForm;
-            } else {
-                // Extension returned false - it couldn't resolve this token
-                logger::debug("CustomResolveForm could not resolve token '{}'", token);
-                return nullptr;
-            }
-        } catch (const std::exception& e) {
-            logger::error("Exception in CustomResolveForm result: {}", e.what());
-            return nullptr;
-        }
-    } else {
-        logger::warn("CustomResolveForm timeout for token '{}' on quest 0x{:X}", token, quest->GetFormID());
-        return nullptr;
-    }
-}
-
-bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect* cmdPrimary, std::vector<RE::BSFixedString> params) {
+bool FormResolver::RunOperationOnActor(FrameContext* frame, RE::Actor* targetActor, RE::ActiveEffect* cmdPrimary, std::vector<RE::BSFixedString> params) {
     if (!cmdPrimary || !targetActor || params.size() == 0) {
         logger::error("Cannot call FormResolver::RunOperationOnActor with invalid cmdPrimary, targetActor, or params");
         return false;
@@ -96,23 +19,15 @@ bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect*
         return false;
     }
     
-    /*
-    // Clear any previous result in the frame
-    auto* frame = ContextManager::GetSingleton().GetFrameContext(threadHandle);
-    if (!frame) {
-        logger::error("Failed to get frame context for threadHandle {}", threadHandle);
-        return nullptr;
-    }
-    frame->customResolveFormResult = nullptr;
-    */
+    frame->mostRecentResult = "";
     
-    // Create promise/future pair
-    std::promise<bool> resultPromise;
-    std::future<bool> resultFuture = resultPromise.get_future();
+    // Create promise/future pair for string result
+    std::promise<std::string> resultPromise;
+    std::future<std::string> resultFuture = resultPromise.get_future();
     
     // Create callback
     RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
-    callback.reset(new FormResolutionCallback(std::move(resultPromise)));
+    callback.reset(new FormResolutionCallback(std::move(resultPromise), cmdPrimary));
 
     auto* args =
         RE::MakeFunctionArguments(static_cast<RE::Actor*>(targetActor), static_cast<RE::ActiveEffect*>(cmdPrimary),
@@ -148,7 +63,7 @@ bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect*
             // Operation completed normally
             try {
                 //bool resolved = resultFuture.get();
-                // doesn't matter how this return value resolved... these don't return anything
+                 frame->mostRecentResult = resultFuture.get();
                 return true;
             } catch (const std::exception& e) {
                 logger::error("Exception in RunOperationOnActor result: {}", e.what());
@@ -159,10 +74,10 @@ bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect*
         // Check if execution should be interrupted
         if (!contextManager.ShouldContinueExecution()) {
             logger::warn("RunOperationOnActor interrupted due to execution pause");
-            return false; // Or true, depending on your error handling strategy
+            return false;
         }
         
-        // Optional: Check if VM is still healthy
+        // Check if VM is still healthy
         auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
         if (!vm) {
             logger::error("VM became unavailable during RunOperationOnActor");
@@ -181,9 +96,9 @@ bool BatchExecutionManager::StartBatch(RE::VMStackID stackId, SLTStackAnalyzer::
     }
     
     {
-        std::lock_guard<std::mutex> lock(threadsMutex);  // Need separate mutex for threads
+        std::lock_guard<std::mutex> lock(threadsMutex);
         activeThreads.emplace_back([this, stackId, contextInfo](std::stop_token stoken) {
-            ExecuteBatch(stackId, contextInfo, stoken);  // Pass stop_token
+            ExecuteBatch(stackId, contextInfo, stoken);
         });
     }
     

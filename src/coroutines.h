@@ -9,18 +9,120 @@ namespace SLT {
 // Simple callback for CustomResolveForm calls
 class FormResolutionCallback : public RE::BSScript::IStackCallbackFunctor {
 private:
-    std::promise<bool> promise;
+    std::promise<std::string> promise;
+    RE::ActiveEffect* ame;
 
 public:
-    FormResolutionCallback(std::promise<bool> p) : promise(std::move(p)) {}
+    FormResolutionCallback(std::promise<std::string> p, RE::ActiveEffect* activeEffect) 
+        : promise(std::move(p)), ame(activeEffect) {}
     
     void operator()(RE::BSScript::Variable result) override {
         try {
-            bool resolved = false;
-            if (result.IsBool()) {
-                resolved = result.GetBool();
+
+
+
+
+
+
+
+/*
+
+This. This right here is what we have... again... diverged for... this final point... trying to return a value from Papyrus to SKSE.
+I suppose it was destiny.
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+            logger::debug("FormResolutionCallback: result: GetType.TypeAsString({})", result.GetType().TypeAsString());
+            if (result.IsString()) {
+                logger::debug("FormResolutionCallback: result.AsString({})", result.GetString());
             }
-            promise.set_value(resolved);
+            std::string resultValue = "";
+            logger::debug("FormResolutionCallback: Starting, ame={}", static_cast<void*>(ame));
+            
+            if (ame) {
+                auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+                if (vm) {
+                    auto* handleP = vm->GetObjectHandlePolicy();
+                    auto* bindP = vm->GetObjectBindPolicy();
+                    
+                    if (handleP && bindP) {
+                        // Try different approaches to get the right handle
+                        RE::BSTSmartPointer<RE::BSScript::Object> ameObj;
+                        
+                        // Approach 1: Try with the specific script type
+                        auto vmhandle = handleP->GetHandleForObject(RE::ActiveEffect::VMTYPEID, ame);
+                        logger::debug("FormResolutionCallback: ActiveEffect vmhandle={}", vmhandle);
+                        
+                        if (vmhandle) {
+                            bindP->BindObject(ameObj, vmhandle);
+                            bool bindSuccess = !(!ameObj);
+                            logger::debug("FormResolutionCallback: ActiveEffect bind success={}", bindSuccess);
+                        }
+                        
+                        // Approach 2: If that failed, try getting all handles for this object
+                        if (!ameObj) {
+                            logger::debug("FormResolutionCallback: Trying to find script object directly...");
+                            
+                            // Try to get the script object type for sl_triggersCmd
+                            RE::BSTSmartPointer<RE::BSScript::ObjectTypeInfo> scriptTypeInfo;
+                            if (vm->GetScriptObjectType("sl_triggersCmd", scriptTypeInfo)) {
+                                logger::debug("FormResolutionCallback: Found sl_triggersCmd type info");
+                                
+                                // Try to get the handle using the script type
+                                // I'm not sure what you were trying, but ObjectTypeInfo has no method GetFormType
+                                //auto scriptHandle = handleP->GetHandleForObject(scriptTypeInfo->GetFormType(), ame);
+                                //logger::debug("FormResolutionCallback: Script vmhandle={}", scriptHandle);
+                                
+                                //if (scriptHandle) {
+                                //    bool scriptBindSuccess = bindP->BindObject(ameObj, scriptHandle);
+                                //    logger::debug("FormResolutionCallback: Script bind success={}", scriptBindSuccess);
+                                //}
+                            }
+                        }
+                        
+                        if (ameObj) {
+                            logger::debug("FormResolutionCallback: Successfully bound object!");
+                            auto* varCustomResolveResult = ameObj->GetProperty(RE::BSFixedString("CustomResolveResult"));
+                            if (varCustomResolveResult && varCustomResolveResult->IsString()) {
+                                resultValue = varCustomResolveResult->GetString();
+                                logger::debug("FormResolutionCallback: Got result: '{}'", resultValue);
+                            } else {
+                                logger::debug("FormResolutionCallback: Property not found or wrong type");
+                            }
+                        } else {
+                            logger::error("FormResolutionCallback: All binding attempts failed");
+                        }
+                    }
+                }
+            }
+            
+            promise.set_value(resultValue);
         } catch (...) {
             promise.set_exception(std::current_exception());
         }
@@ -32,13 +134,7 @@ public:
 // Utility class for synchronous form resolution
 class FormResolver {
 public:
-    // Call CustomResolveForm synchronously and return the result
-    static RE::TESForm* CallCustomResolveForm(RE::TESQuest* quest, 
-                                             std::string_view token, 
-                                             RE::Actor* targetActor, 
-                                             ThreadContextHandle threadHandle);
-
-    static bool RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect* cmdPrimary,
+    static bool RunOperationOnActor(FrameContext* frame, RE::Actor* targetActor, RE::ActiveEffect* cmdPrimary,
         std::vector<RE::BSFixedString> params);
 };
 

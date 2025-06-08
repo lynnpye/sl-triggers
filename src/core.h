@@ -24,11 +24,11 @@ public:
                 const std::string& entry_msg = "Entering", 
                 const std::string& exit_msg = "Exiting") 
         : function_name(func_name), exit_message(exit_msg) {
-        logger::debug("\n\n\n>>>>>{} {}\n\n\n", function_name, entry_msg);
+        logger::debug("\n\t\t>>>>>{} {}\n", function_name, entry_msg);
     }
     
     ~LoggerGuard() {
-        logger::debug("\n\n\n<<<<<{} {}\n\n\n", function_name, exit_message);
+        logger::debug("\n\t\t<<<<<{} {}\n", function_name, exit_message);
     }
     
     // Prevent copying to avoid double logging

@@ -221,6 +221,15 @@ std::string Util::String::ToUpper(std::string_view a_str) {
     return result;
 }
 
+float Util::String::TryToFloat(std::string_view strval) {
+    float value;
+    auto [ptr, ec] = std::from_chars(strval.data(), strval.data() + strval.size(), value);
+    if (ec == std::errc{} && ptr == strval.data() + strval.size()) {
+        return value;
+    }
+    return 0.0f;
+}
+
 //=================================================================================================
 // MathUtil::Angle implementations
 //=================================================================================================

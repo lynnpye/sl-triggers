@@ -2,6 +2,7 @@
 
 // Parameter macros for common Papyrus function signatures
 #define PAPYRUS_STATIC_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* vm, [[maybe_unused]] const ::RE::VMStackID stackId, [[maybe_unused]] RE::StaticFunctionTag*
+
 #define PAPYRUS_INSTANCE_ARGS [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* vm, [[maybe_unused]] const ::RE::VMStackID stackId
 
 #define PAPYRUS_NATIVE_DECL [[maybe_unused]] ::RE::BSScript::Internal::VirtualMachine* vm, [[maybe_unused]] const ::RE::VMStackID stackId

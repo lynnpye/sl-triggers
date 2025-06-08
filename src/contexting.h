@@ -11,7 +11,7 @@ class CommandLine;
 #pragma region CommandLine
 /**
  * CommandLine
- * "You know what the chain of command is? It's the ruttin' chain I beat you over the head with until you understand I'm in command!"
+ * "You know what the chain of command is? It's the ruttin' chain I beat you over the head with until you understand who's in command!"
  *  - a famous space mercenary
  */
 class CommandLine {
@@ -528,17 +528,6 @@ public:
         });
     }
 
-    TargetContext* GetTargetContext(RE::TESForm* target) const {
-        if (!target) target = RE::PlayerCharacter::GetSingleton();
-        
-        return ReadData([target](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> TargetContext* {
-            RE::FormID targetId = target->GetFormID();
-            
-            auto it = targetContexts.find(targetId);
-            return (it != targetContexts.end()) ? it->second.get() : nullptr;
-        });
-    }
-
     FrameContext* GetFrameContext(ThreadContextHandle handle) const {
         if (!handle) return nullptr;
 
@@ -696,6 +685,7 @@ public:
     }
 
     TargetContext* target;
+    RE::ActiveEffect* ame;
 
     ThreadContextHandle threadContextHandle;
     std::string initialScriptName;
@@ -813,6 +803,8 @@ public:
 
         return -1;
     }
+
+    void FetchMostRecentResult();
     
 #define FrameLogInfo(frame, fmt, ...) \
     do { \
@@ -881,53 +873,6 @@ public:
     
     bool Serialize(SKSE::SerializationInterface* a_intfc) const;
     bool Deserialize(SKSE::SerializationInterface* a_intfc);
-    
-    /*
-    template<typename... Args>
-    void Log(spdlog::level::level_enum level, std::format_string<Args...> fmt, Args&&... args) {
-        std::string message = std::format(fmt, std::forward<Args>(args)...);
-        std::string prefixed = std::format("{}:{} - {}", scriptName, currentLine + 1, message);
-        
-        switch (level) {
-            case spdlog::level::info:
-                logger::info("{}", prefixed);
-                break;
-            case spdlog::level::warn:
-                logger::warn("{}", prefixed);
-                break;
-            case spdlog::level::err:
-                logger::error("{}", prefixed);
-                break;
-            case spdlog::level::debug:
-                logger::debug("{}", prefixed);
-                break;
-            default:
-                logger::info("{}", prefixed);
-                break;
-        }
-    }
-    
-    // Convenience wrappers
-    template<typename... Args>
-    void LogInfo(std::format_string<Args...> fmt, Args&&... args) {
-        Log(spdlog::level::info, fmt, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    void LogWarn(std::format_string<Args...> fmt, Args&&... args) {
-        Log(spdlog::level::warn, fmt, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    void LogError(std::format_string<Args...> fmt, Args&&... args) {
-        Log(spdlog::level::err, fmt, std::forward<Args>(args)...);
-    }
-
-    template<typename... Args>
-    void LogDebug(std::format_string<Args...> fmt, Args&&... args) {
-        Log(spdlog::level::debug, fmt, std::forward<Args>(args)...);
-    }
-    */
 
     // returns true if RunStep() can do something (i.e. this framecontext has an op ready to run); false if nothing else to do
     bool IsReady();

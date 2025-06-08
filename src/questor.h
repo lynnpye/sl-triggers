@@ -17,8 +17,6 @@ public:
     explicit SLTExtension(RE::TESQuest* _quest, bool _enabled, std::string _key, std::string _friendlyName, std::int32_t _priority)
         : quest(_quest), enabled(_enabled), key(_key), friendlyName(_friendlyName), priority(_priority)
         {}
-
-    std::optional<RE::TESForm*> CustomResolveForm(std::string_view token, FrameContext* frame);
 };
 
 class SLTExtensionTracker {
@@ -63,13 +61,13 @@ public:
         return nullptr;
     }
 
-    static bool IsEnabled(std::string_view extensionKey) {
+    static void SetEnabled(std::string_view extensionKey, bool enabledState) {
         if (auto* ext = GetExtension(extensionKey)) {
-            return ext->enabled;
+            logger::info("Extension with key({}) set to enabled state ({})", ext->key, enabledState);
+            ext->enabled = enabledState;
         } else {
             logger::warn("No extension with key ({})", extensionKey);
         }
-        return false;
     }
     
     static void AddQuest(RE::TESQuest* quest, RE::VMStackID stackId);

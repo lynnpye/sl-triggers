@@ -586,6 +586,8 @@ bool ContextManager::HasGlobalVar(std::string_view name) const {
 
 std::string ContextManager::SetVar(FrameContext* frame, std::string_view token, std::string_view value) {
     if (!frame || token.empty()) return "";
+
+    logger::debug("SetVar({}) to ({})", token, value);
     
     if (token[0] == '$' && token.length() > 1) {
         std::string remaining = std::string(token.substr(1));
@@ -783,6 +785,53 @@ bool ContextManager::ResolveFormVariable(FrameContext* frame, std::string_view t
     if (str::iEquals(token, "#none") || str::iEquals(token, "none") || token.empty()) {
         frame->customResolveFormResult = nullptr;
         return true;
+    }
+    // cutting out the extension.form resolution feature
+    if (str::iEquals(token.substr(0, 8), "#partner")) {
+        int skip = -1;
+        if (token.size() == 8) {
+            skip = 0;
+        }
+        else if (token.size() == 9) {
+            switch (token.at(8)) {
+                case '1': skip = 0; break;
+                case '2': skip = 1; break;
+                case '3': skip = 2; break;
+                case '4': skip = 3; break;
+            }
+        }
+        if (skip != -1) {
+            std::vector<RE::BSFixedString> params;
+            switch (skip) {
+                case 0: params.push_back(RE::BSFixedString("resolve_partner1")); break;
+                case 1: params.push_back(RE::BSFixedString("resolve_partner2")); break;
+                case 2: params.push_back(RE::BSFixedString("resolve_partner3")); break;
+                case 3: params.push_back(RE::BSFixedString("resolve_partner4")); break;
+            }
+            if (FormResolver::RunOperationOnActor(frame, frame->thread->target->AsActor(), frame->thread->ame, params)) {
+                // extract from the ame
+                auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+                if (vm) {
+                    auto* handleP = vm->GetObjectHandlePolicy();
+                    auto* bindP = vm->GetObjectBindPolicy();
+                    if (handleP && bindP) {
+                        auto vmhandle = handleP->GetHandleForObject(RE::ActiveEffect::VMTYPEID, frame->thread->ame);
+                        RE::BSTSmartPointer<RE::BSScript::Object> ameObj;
+                        bindP->BindObject(ameObj, vmhandle);
+                        if (ameObj) {
+                            auto* varCustomResolveFormValue = ameObj->GetProperty(RE::BSFixedString("CustomResolveFormResult"));
+                            if (varCustomResolveFormValue && varCustomResolveFormValue->IsObject()) {
+                                auto formResult = varCustomResolveFormValue->GetObject();
+                                if (formResult) {
+                                    auto* actorFormPtr = handleP->GetObjectForHandle(RE::Actor::FORMTYPE, formResult->GetHandle());
+                                    frame->customResolveFormResult = actorFormPtr->As<RE::Actor>();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     // Try direct form lookup for form IDs or editor IDs
@@ -1177,10 +1226,47 @@ bool FrameContext::IsReady() {
     return Salty::AdvanceToNextRunnableStep(this);
 }
 
+void FrameContext::FetchMostRecentResult() {
+    LOG_FUNCTION_SCOPE("FetchMostRecentResult");
+    auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+    if (vm) {
+        auto* handleP = vm->GetObjectHandlePolicy();
+        auto* bindP = vm->GetObjectBindPolicy();
+        if (handleP && bindP && this && this->thread && this->thread->ame) {
+            auto vmhandle = handleP->GetHandleForObject(RE::ActiveEffect::VMTYPEID, this->thread->ame);
+            if (vmhandle) {
+                RE::BSTSmartPointer<RE::BSScript::Object> ameObj;
+                bindP->BindObject(ameObj, vmhandle);
+                if (ameObj) {
+                    auto* varCustomResolveResult = ameObj->GetProperty(RE::BSFixedString("CustomResolveResult"));
+                    if (varCustomResolveResult && varCustomResolveResult->IsString()) {
+                        this->mostRecentResult = varCustomResolveResult->GetString();
+                    }
+                    else {
+                        logger::error("Unable to get property");
+                    }
+                }
+                else {
+                    logger::error("Unable to bind ameObj using vmhandle({})", vmhandle);
+                }
+            }
+            else {
+                logger::error("Unable to retrieve vmhandle");
+            }
+        }
+        else {
+            logger::error("Unable to retrieve one of (handlePolicy, bindPolicy, framecontext, frame->thread, frame->thread->ame)");
+        }
+    }
+    else {
+        logger::error("Unable to retrieve vm");
+    }
+}
+
 bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
     auto& manager = ContextManager::GetSingleton();
     const int MAX_BATCHED_STEPS = 100;  // Reduced for coroutine compatibility
-    const int TIME_CHECK_INTERVAL = 10; // Check time more frequently
+    //const int TIME_CHECK_INTERVAL = 10; // Check time more frequently
     int stepCount = 0;
     
     // Check if execution is paused
@@ -1189,8 +1275,8 @@ bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
         return IsReady(); // Don't execute, but preserve ready state
     }
     
-    auto startTime = std::chrono::high_resolution_clock::now();
-    const auto maxFrameTime = std::chrono::microseconds(200); // Shorter budget for coroutines
+    //auto startTime = std::chrono::high_resolution_clock::now();
+    //const auto maxFrameTime = std::chrono::microseconds(200); // Shorter budget for coroutines
     
     while (stepCount < MAX_BATCHED_STEPS) {
         // Check for pause every few steps
@@ -1200,6 +1286,17 @@ bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
         }
         
         /*bool wasInternal =*/ Salty::RunStep(this, contextInfo);
+        
+        // handle some cases
+        // is current frame at end?
+        if (this->currentLine >= this->scriptTokens.size()) {
+            // we should pop and leave
+            return this->thread->PopFrameContext();
+        }
+
+        if (this != this->thread->callStack.back().get()) {
+            return true;
+        }
         stepCount++;
         /*
         if (!wasInternal) {
@@ -1211,6 +1308,7 @@ bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
         if (!IsReady()) break;
         
         // Check time more frequently for coroutine responsiveness
+        /*
         if (stepCount % TIME_CHECK_INTERVAL == 0) {
             auto elapsed = std::chrono::high_resolution_clock::now() - startTime;
             if (elapsed > maxFrameTime) {
@@ -1218,6 +1316,7 @@ bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
                 break;
             }
         }
+        */
     }
     
     if (stepCount >= MAX_BATCHED_STEPS) {
