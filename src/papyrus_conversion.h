@@ -181,11 +181,11 @@ public:
                 std::string typeName = typeInfo->GetName();
                 
                 // Map common Papyrus type names to FormTypes
-                if (typeName == "Quest") expectedType = RE::FormType::Quest;
-                else if (typeName == "Actor") expectedType = RE::FormType::ActorCharacter;
-                else if (typeName == "ObjectReference") expectedType = RE::FormType::Reference;
-                else if (typeName == "Spell") expectedType = RE::FormType::Spell;
-                else if (typeName == "MagicEffect") expectedType = RE::FormType::MagicEffect;
+                if (str::iEquals(typeName, "Quest")) expectedType = RE::FormType::Quest;
+                else if (str::iEquals(typeName, "Actor")) expectedType = RE::FormType::ActorCharacter;
+                else if (str::iEquals(typeName, "ObjectReference")) expectedType = RE::FormType::Reference;
+                else if (str::iEquals(typeName, "Spell")) expectedType = RE::FormType::Spell;
+                else if (str::iEquals(typeName, "MagicEffect")) expectedType = RE::FormType::MagicEffect;
                 // Add more mappings as needed
             }
         }

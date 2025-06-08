@@ -147,7 +147,7 @@ std::optional<std::int32_t> Util::String::StringToIntWithImplicitHexConversion(s
     const char* end = hexStr.data() + hexStr.size();
     int base = 10;
     
-    if (hexStr.size() >= 2 && hexStr.substr(0, 2) == "0x") {
+    if (hexStr.size() >= 2 && str::iEquals(hexStr.substr(0, 2), "0x")) {
         start += 2;
         base = 16;
     } else if (requireHex) {

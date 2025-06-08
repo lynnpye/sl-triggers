@@ -137,12 +137,6 @@ public:
     ScriptType GetScriptType() const override { return ScriptType::JSON; }
 
 private:
-    /**
-     * ParseJSONCommands - Extract commands from JSON structure
-     * @param json - Parsed JSON object
-     * @returns vector of CommandLine objects
-     */
-    std::vector<std::unique_ptr<CommandLine>> ParseJSONCommands(const nlohmann::json& json);
     
     /**
      * ProcessJSONCommand - Convert a single JSON command array to CommandLine

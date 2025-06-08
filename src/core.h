@@ -12,6 +12,34 @@ namespace fs = std::filesystem;
 
 namespace SLT {
 
+    
+// RAII Logger Guard - logs on construction and destruction
+class LoggerGuard {
+private:
+    std::string function_name;
+    std::string exit_message;
+    
+public:
+    LoggerGuard(const std::string& func_name, 
+                const std::string& entry_msg = "Entering", 
+                const std::string& exit_msg = "Exiting") 
+        : function_name(func_name), exit_message(exit_msg) {
+        logger::debug("\n\n\n>>>>>{} {}\n\n\n", function_name, entry_msg);
+    }
+    
+    ~LoggerGuard() {
+        logger::debug("\n\n\n<<<<<{} {}\n\n\n", function_name, exit_message);
+    }
+    
+    // Prevent copying to avoid double logging
+    LoggerGuard(const LoggerGuard&) = delete;
+    LoggerGuard& operator=(const LoggerGuard&) = delete;
+};
+
+// Macro for convenience (optional)
+#define LOG_FUNCTION_SCOPE(func_name) LoggerGuard _log_guard(func_name)
+#define LOG_FUNCTION_SCOPE_CUSTOM(func_name, entry, exit) LoggerGuard _log_guard(func_name, entry, exit)
+
 enum ScriptType {
     INVALID = 0,
 

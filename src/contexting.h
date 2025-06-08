@@ -7,8 +7,30 @@ class ThreadContext;
 class FrameContext;
 class CommandLine;
 
-#pragma region VariableDumper
 
+#pragma region CommandLine
+/**
+ * CommandLine
+ * "You know what the chain of command is? It's the ruttin' chain I beat you over the head with until you understand I'm in command!"
+ *  - a famous space mercenary
+ */
+class CommandLine {
+public: // I know, I know
+
+    CommandLine() = default;
+
+    explicit CommandLine(std::size_t _lineNumber, std::vector<std::string> _tokens)
+        : lineNumber(_lineNumber), tokens(_tokens) {}
+
+    std::size_t lineNumber;
+    std::vector<std::string> tokens;
+    
+    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
+    bool Deserialize(SKSE::SerializationInterface* a_intfc);
+};
+#pragma endregion
+
+#pragma region VariableDumper
 
 class VariableDumper {
 public:
@@ -374,22 +396,19 @@ inline void LogVariableError(const RE::BSScript::Variable& var,
     logger::error("{}: {}", name, VariableDumper::DumpVariable(var));
 }
 
-
-
-
 #pragma endregion
 
 #pragma region SLTStackAnalyzer
 class SLTStackAnalyzer {
 public:
     struct AMEContextInfo {
-        RE::VMStackID stackId;
+        RE::ActiveEffect* ame;
         FrameContext* frame;
         ThreadContextHandle handle = 0;
         std::string initialScriptName;
-        RE::ActiveEffect* ame;
-        RE::Actor* target;
         bool isValid = false;
+        RE::VMStackID stackId;
+        RE::Actor* target;
     };
 
     /**
@@ -474,7 +493,7 @@ public:
         return !executionPaused;
     }
     
-    void PauseExecution(const std::string& reason) {
+    void PauseExecution(std::string_view reason) {
         std::lock_guard<std::mutex> lock(executionControlMutex);
         if (!executionPaused) {
             logger::info("Pausing script execution: {}", reason);
@@ -559,12 +578,7 @@ public:
         });
     }
     
-    void CleanupContext(ThreadContextHandle contextId) {
-        WriteData([contextId](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
-            activeContexts.erase(contextId);
-            return nullptr;
-        });
-    }
+    void CleanupContext(ThreadContextHandle contextId);
 
     void CleanupAllContexts() {
         WriteData([](auto& targetContexts, auto& activeContexts, auto& globalVars, auto& nextId) {
@@ -582,6 +596,8 @@ public:
 
     bool Serialize(SKSE::SerializationInterface* a_intfc) const;
     bool Deserialize(SKSE::SerializationInterface* a_intfc);
+
+    std::string DumpState();
 
 private:
     ContextManager(const ContextManager&) = delete;
@@ -660,7 +676,7 @@ public:
     bool Serialize(SKSE::SerializationInterface* a_intfc) const;
     bool Deserialize(SKSE::SerializationInterface* a_intfc);
 
-    void RemoveThreadContext(ThreadContext* threadContextToRemove);
+    std::string DumpState();
 };
 #pragma endregion
 
@@ -674,9 +690,8 @@ public:
  */
 class ThreadContext {
 public:
-    explicit ThreadContext(TargetContext* target, std::string_view _initialScriptName)
-        : target(target), initialScriptName(_initialScriptName), isClaimed(false), wasClaimed(false) {
-        threadContextHandle = ContextManager::GetNextContextId();
+    explicit ThreadContext(TargetContext* target, std::string_view _initialScriptName, ThreadContextHandle _threadContextHandle)
+        : target(target), initialScriptName(_initialScriptName), threadContextHandle(_threadContextHandle), isClaimed(false), wasClaimed(false) {
         PushFrameContext(_initialScriptName);
     }
 
@@ -739,6 +754,8 @@ public:
     FrameContext* PushFrameContext(std::string_view initialScriptName);
     bool PopFrameContext();
     bool ExecuteNextStep(SLTStackAnalyzer::AMEContextInfo& contextInfo);
+
+    std::string DumpState();
 };
 #pragma endregion
 
@@ -785,10 +802,49 @@ public:
     RE::Actor* iterActor;
 
     std::map<std::string, std::string> localVars;
+
+    std::size_t GetCurrentActualLineNumber() {
+        logger::debug("scriptTokens.size({}) currentLine({})", scriptTokens.size(), currentLine);
+
+        if (currentLine < scriptTokens.size()) {
+            auto& cmdLine = scriptTokens.at(currentLine);
+            return cmdLine->lineNumber;
+        }
+
+        return -1;
+    }
+    
+#define FrameLogInfo(frame, fmt, ...) \
+    do { \
+        std::string message = std::format(fmt, ##__VA_ARGS__); \
+        std::string prefixed = std::format("[{}:{}] - {}", (frame)->scriptName, (frame)->GetCurrentActualLineNumber(), message); \
+        logger::info("{}", prefixed); \
+    } while(0)
+
+#define FrameLogWarn(frame, fmt, ...) \
+    do { \
+        std::string message = std::format(fmt, ##__VA_ARGS__); \
+        std::string prefixed = std::format("[{}:{}] - {}", (frame)->scriptName, (frame)->GetCurrentActualLineNumber(), message); \
+        logger::warn("{}", prefixed); \
+    } while(0)
+
+#define FrameLogError(frame, fmt, ...) \
+    do { \
+        std::string message = std::format(fmt, ##__VA_ARGS__); \
+        std::string prefixed = std::format("[{}:{}] - {}", (frame)->scriptName, (frame)->GetCurrentActualLineNumber(), message); \
+        logger::error("{}", prefixed); \
+    } while(0)
+
+#define FrameLogDebug(frame, fmt, ...) \
+    do { \
+        std::string message = std::format(fmt, ##__VA_ARGS__); \
+        std::string prefixed = std::format("[{}:{}] - {}", (frame)->scriptName, (frame)->GetCurrentActualLineNumber(), message); \
+        logger::debug("{}", prefixed); \
+    } while(0)
     
     std::string SetLocalVar(std::string_view name, std::string_view value) {
         if (name.empty()) {
-            LogWarn("SetLocalVar: Variable name cannot be empty");
+            FrameLogWarn(this, "SetLocalVar: Variable name cannot be empty");
             return "";
         }
         
@@ -826,6 +882,7 @@ public:
     bool Serialize(SKSE::SerializationInterface* a_intfc) const;
     bool Deserialize(SKSE::SerializationInterface* a_intfc);
     
+    /*
     template<typename... Args>
     void Log(spdlog::level::level_enum level, std::format_string<Args...> fmt, Args&&... args) {
         std::string message = std::format(fmt, std::forward<Args>(args)...);
@@ -870,34 +927,15 @@ public:
     void LogDebug(std::format_string<Args...> fmt, Args&&... args) {
         Log(spdlog::level::debug, fmt, std::forward<Args>(args)...);
     }
+    */
 
     // returns true if RunStep() can do something (i.e. this framecontext has an op ready to run); false if nothing else to do
     bool IsReady();
 
     // returns false when the FrameContext has nothing else to run
     bool RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo);
-};
-#pragma endregion
 
-#pragma region CommandLine
-/**
- * CommandLine
- * "You know what the chain of command is? It's the ruttin' chain I beat you over the head with until you understand I'm in command!"
- *  - a famous space mercenary
- */
-class CommandLine {
-public: // I know, I know
-
-    CommandLine() = default;
-
-    explicit CommandLine(std::size_t _lineNumber, std::vector<std::string> _tokens)
-        : lineNumber(_lineNumber), tokens(_tokens) {}
-
-    std::size_t lineNumber;
-    std::vector<std::string> tokens;
-    
-    bool Serialize(SKSE::SerializationInterface* a_intfc) const;
-    bool Deserialize(SKSE::SerializationInterface* a_intfc);
+    std::string DumpState();
 };
 #pragma endregion
 }

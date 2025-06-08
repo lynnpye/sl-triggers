@@ -211,7 +211,7 @@ ExtensionContextInfo GetExtensionContextInfo(RE::VMStackID stackId) {
         // maybe return result;
     }
 
-    quest = static_cast<RE::TESQuest*>(handlePolicy->GetObjectForHandle(RE::ActiveEffect::VMTYPEID, objHandle));
+    quest = static_cast<RE::TESQuest*>(handlePolicy->GetObjectForHandle(RE::TESQuest::FORMTYPE, objHandle));
     if (!quest) {
         logger::error("Unable to obtain quest from selfObject with RE::VMHandle({})", objHandle);
         return result;

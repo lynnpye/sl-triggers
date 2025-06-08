@@ -16,6 +16,7 @@ namespace fs = std::filesystem;
 #include <mutex>
 #include <ranges>
 #include <shared_mutex>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_set>
 #include <unordered_map>

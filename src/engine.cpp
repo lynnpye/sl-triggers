@@ -289,9 +289,10 @@ using namespace SLT;
             
             // GOSUB labels: "beginsub LABELNAME" style  
             if (cmdLine->tokens.size() >= 2 && 
-                ResolveValueVariable(cmdLine->tokens[0], frame) == "beginsub") {
-                std::string subName = ResolveValueVariable(cmdLine->tokens[1], frame);
+                str::iEquals(cmdLine->tokens[0], "beginsub")) {
+                std::string subName = cmdLine->tokens[1];
                 if (!subName.empty()) {
+                    logger::debug("gosub label added [{}]({})", subName, i);
                     frame->gosubLabelMap[subName] = i; // Point to the beginsub line
                 }
             }
@@ -301,7 +302,7 @@ using namespace SLT;
     // Command execution functions
     void ExecuteSetCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() < 3) {
-            frame->LogWarn("SET command requires at least 3 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "SET command requires at least 3 parameters, got {}", tokens.size());
             return;
         }
         
@@ -328,13 +329,13 @@ using namespace SLT;
                     float result = std::stof(val1) / val2f;
                     value = std::to_string(result);
                 } else {
-                    frame->LogWarn("Division by zero in SET command");
+                    FrameLogWarn(frame, "Division by zero in SET command");
                     return;
                 }
             } else if (op == "&") {
                 value = val1 + val2; // String concatenation
             } else {
-                frame->LogWarn("Unknown operator in SET command: {}", op);
+                FrameLogWarn(frame, "Unknown operator in SET command: {}", op);
                 return;
             }
         }
@@ -345,7 +346,7 @@ using namespace SLT;
 
     void ExecuteIfCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() != 5) {
-            frame->LogWarn("IF command requires exactly 5 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "IF command requires exactly 5 parameters, got {}", tokens.size());
             return;
         }
         
@@ -355,16 +356,20 @@ using namespace SLT;
         std::string target = ResolveValueVariable(tokens[4], frame);
         
         bool condition = false;
-        if (op == "=" || op == "==") {
+        if (op == "=" || op == "==" || op == "&=") {
             condition = SmartComparator::SmartEquals(val1, val2);
-        } else if (op == "!=" || op == "<>") {
+        } else if (op == "!=" || op == "<>" || op == "&!=") {
             condition = !SmartComparator::SmartEquals(val1, val2);
         } else if (op == ">") {
             condition = std::stof(val1) > std::stof(val2);
+        } else if (op == ">=") {
+            condition = std::stof(val1) >= std::stof(val2);
+        } else if (op == "<") {
+            condition = std::stof(val1) < std::stof(val2);
         } else if (op == "<=") {
             condition = std::stof(val1) <= std::stof(val2);
         } else {
-            frame->LogWarn("Unknown operator in IF command: {}", op);
+            FrameLogWarn(frame, "Unknown operator in IF command: {}", op);
             return;
         }
         
@@ -374,45 +379,46 @@ using namespace SLT;
             if (it != frame->gotoLabelMap.end()) {
                 frame->currentLine = it->second - 1;
             } else {
-                frame->LogWarn("IF command: label '{}' not found", target);
+                FrameLogWarn(frame, "IF command: label '{}' not found", target);
             }
         }
     }
 
     void ExecuteGotoCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() != 2) {
-            frame->LogWarn("GOTO command requires exactly 2 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "GOTO command requires exactly 2 parameters, got {}", tokens.size());
             return;
         }
         
         std::string target = ResolveValueVariable(tokens[1], frame);
         auto it = frame->gotoLabelMap.find(target);
         if (it != frame->gotoLabelMap.end()) {
-            frame->currentLine = it->second - 1; // -1 because RunStep will increment
+            frame->currentLine = it->second; // -1 because RunStep will increment
         } else {
-            frame->LogWarn("GOTO command: label '{}' not found", target);
+            FrameLogWarn(frame, "GOTO command: label '{}' not found", target);
         }
     }
 
     void ExecuteGosubCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() != 2) {
-            frame->LogWarn("GOSUB command requires exactly 2 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "GOSUB command requires exactly 2 parameters, got {}", tokens.size());
             return;
         }
         
         std::string target = ResolveValueVariable(tokens[1], frame);
         auto it = frame->gosubLabelMap.find(target);
         if (it != frame->gosubLabelMap.end()) {
+            logger::debug("gosub pushing back line({}) and switching to line({})", frame->currentLine, it->second - 1);
             frame->returnStack.push_back(frame->currentLine); // Save return address
-            frame->currentLine = it->second - 1; // -1 because RunStep will increment
+            frame->currentLine = it->second; // -1 because RunStep will increment
         } else {
-            frame->LogWarn("GOSUB command: label '{}' not found", target);
+            FrameLogWarn(frame, "GOSUB command: label '{}' not found", target);
         }
     }
 
     void ExecuteCallCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() < 2) {
-            frame->LogWarn("CALL command requires at least 2 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "CALL command requires at least 2 parameters, got {}", tokens.size());
             return;
         }
         
@@ -427,7 +433,7 @@ using namespace SLT;
         // Push new frame context - THIS IS THE ONLY PLACE THAT SHOULD PUSH CALL STACK
         FrameContext* newFrame = frame->thread->PushFrameContext(scriptName);
         if (!newFrame) {
-            frame->LogError("Failed to create new frame for CALL to: {}", scriptName);
+            FrameLogError(frame, "Failed to create new frame for CALL to: {}", scriptName);
         }
     }
 
@@ -436,7 +442,7 @@ using namespace SLT;
         bool hasReadyFrame = frame->thread->PopFrameContext();
         if (!hasReadyFrame) {
             // No ready frame to return to - this thread is done
-            frame->LogInfo("RETURN command completed - no more frames to execute");
+            FrameLogInfo(frame, "RETURN command completed - no more frames to execute");
         }
         // If PopFrameContext() returns true, execution will continue with the previous frame
         // If it returns false, the thread has no more work to do
@@ -444,7 +450,7 @@ using namespace SLT;
 
     void ExecuteIncCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() < 2) {
-            frame->LogWarn("INC command requires at least 2 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "INC command requires at least 2 parameters, got {}", tokens.size());
             return;
         }
         
@@ -467,7 +473,7 @@ using namespace SLT;
 
     void ExecuteCatCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() < 3) {
-            frame->LogWarn("CAT command requires at least 3 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "CAT command requires at least 3 parameters, got {}", tokens.size());
             return;
         }
         
@@ -487,7 +493,7 @@ using namespace SLT;
             frame->currentLine = frame->returnStack.back();
             frame->returnStack.pop_back();
         } else {
-            frame->LogWarn("ENDSUB without matching GOSUB");
+            FrameLogWarn(frame, "ENDSUB without matching GOSUB");
         }
     }
 
@@ -495,29 +501,23 @@ using namespace SLT;
         // Skip to matching endsub when executing normally (not via gosub)
         // This ensures that if execution flows into a beginsub naturally,
         // it jumps over the subroutine body
-        size_t depth = 1;
         for (size_t i = frame->currentLine + 1; i < frame->scriptTokens.size(); ++i) {
             const auto& cmdLine = frame->scriptTokens[i];
             if (!cmdLine || cmdLine->tokens.empty()) continue;
             
-            std::string cmd = ResolveValueVariable(cmdLine->tokens[0], frame);
-            if (cmd == "beginsub") {
-                depth++;
-            } else if (cmd == "endsub") {
-                depth--;
-                if (depth == 0) {
-                    frame->currentLine = i - 1; // -1 because RunStep will increment
-                    return;
-                }
+            std::string cmd = cmdLine->tokens[0];
+            if (str::iEquals(cmd, "endsub")) {
+                frame->currentLine = i; // -1 because RunStep will increment
+                return;
             }
         }
         
-        frame->LogWarn("BEGINSUB without matching ENDSUB");
+        FrameLogWarn(frame, "BEGINSUB without matching ENDSUB");
     }
 
     void ExecuteCallargCommand(const std::vector<std::string>& tokens, FrameContext* frame) {
         if (tokens.size() != 3) {
-            frame->LogWarn("CALLARG command requires exactly 3 parameters, got {}", tokens.size());
+            FrameLogWarn(frame, "CALLARG command requires exactly 3 parameters, got {}", tokens.size());
             return;
         }
         
@@ -529,40 +529,9 @@ using namespace SLT;
             // Use the new SetVar function
             ContextManager::GetSingleton().SetVar(frame, tokens[2], argValue);
         } else {
-            frame->LogWarn("CALLARG: invalid argument index {} (available: {})", 
+            FrameLogWarn(frame, "CALLARG: invalid argument index {} (available: {})", 
                           argIndex, frame->callArgs.size());
         }
-    }
-
-    bool RunOperationOnActor(RE::Actor* _cmdTargetActor, RE::ActiveEffect* _cmdPrimary,
-						 std::vector<RE::BSFixedString> _param) {
-        bool success = false;
-
-        if (_cmdPrimary && _cmdTargetActor) {
-            auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-            RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> noop;
-
-            auto* operationArgs =
-                RE::MakeFunctionArguments(static_cast<RE::Actor*>(_cmdTargetActor), static_cast<RE::ActiveEffect*>(_cmdPrimary),
-                                        static_cast<std::vector<RE::BSFixedString>>(_param));
-
-            if (_param.size() > 0) {
-                auto cachedIt = FunctionLibrary::functionScriptCache.find(_param[0].c_str());
-                if (cachedIt != FunctionLibrary::functionScriptCache.end()) {
-                    auto& cachedScript = cachedIt->second;
-                    success = vm->DispatchStaticCall(cachedScript, _param[0], operationArgs, noop);
-                    return success;
-                } else {
-                    logger::error("Unable to find operation {} in function library cache", _param[0].c_str());
-                }
-            } else {
-                logger::error("RunOperationOnActor: zero-length _param is not allowed");
-            }
-        } else {
-            logger::error("cmdPrimary or cmdTargetActor is null");
-        }
-
-        return success;
     }
 
     bool TryFunctionLibrary(const std::vector<std::string>& tokens, FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& contextInfo) {
@@ -577,7 +546,7 @@ using namespace SLT;
             param.push_back(ResolveValueVariable(token, frame));
         }
         
-        return RunOperationOnActor(contextInfo.target, contextInfo.ame, param);
+        return FormResolver::RunOperationOnActor(contextInfo.target, contextInfo.ame, param);
     }
 
 }
@@ -593,13 +562,21 @@ RE::TESForm* Salty::ResolveFormVariable(std::string_view token, FrameContext* fr
         bool triedSLT = false;
 
         for (auto& quest : quests) {
-            if (!triedSLT && quest->priority >= 0) {
-                triedSLT = true;
-                if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
-                    return frame->customResolveFormResult;
-                }
+            if (quest->priority >= 0)
+                continue;
+            // Extension form resolution using promise/future
+            if (auto optForm = quest->CustomResolveForm(token, frame)) {
+                return optForm.value();
             }
-            
+        }
+
+        if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
+            return frame->customResolveFormResult;
+        }
+
+        for (auto& quest : quests) {
+            if (quest->priority < 0)
+                continue;
             // Extension form resolution using promise/future
             if (auto optForm = quest->CustomResolveForm(token, frame)) {
                 return optForm.value();
@@ -613,12 +590,14 @@ RE::TESForm* Salty::ResolveFormVariable(std::string_view token, FrameContext* fr
 
 bool Salty::ParseScript(FrameContext* frame) {
     try {
-        Parser::ParseScript(frame);
+        auto parseResult = Parser::ParseScript(frame);
         
-        // After parsing, build label maps for goto/gosub
-        BuildLabelMaps(frame);
-        
-        return true;
+        if (parseResult == ParseResult::Success) {
+            // After parsing, build label maps for goto/gosub
+            BuildLabelMaps(frame);
+            return true;
+        }
+        return false;
     } catch (std::logic_error& lerr) {
         logger::warn("Error parsing script: {}", lerr.what());
     }
@@ -673,27 +652,27 @@ bool Salty::RunStep(FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& conte
     std::string command = ResolveValueVariable(cmdLine->tokens[0], frame);
     
     // Execute the command
-    if (command == "set") {
+    if (str::iEquals(command, "set")) {
         ExecuteSetCommand(cmdLine->tokens, frame);
-    } else if (command == "if") {
+    } else if (str::iEquals(command, "if")) {
         ExecuteIfCommand(cmdLine->tokens, frame);
-    } else if (command == "goto") {
+    } else if (str::iEquals(command, "goto")) {
         ExecuteGotoCommand(cmdLine->tokens, frame);
-    } else if (command == "gosub") {
+    } else if (str::iEquals(command, "gosub")) {
         ExecuteGosubCommand(cmdLine->tokens, frame);
-    } else if (command == "call") {
+    } else if (str::iEquals(command, "call")) {
         ExecuteCallCommand(cmdLine->tokens, frame);
-    } else if (command == "return") {
+    } else if (str::iEquals(command, "return")) {
         ExecuteReturnCommand(cmdLine->tokens, frame);
-    } else if (command == "inc") {
+    } else if (str::iEquals(command, "inc")) {
         ExecuteIncCommand(cmdLine->tokens, frame);
-    } else if (command == "cat") {
+    } else if (str::iEquals(command, "cat")) {
         ExecuteCatCommand(cmdLine->tokens, frame);
-    } else if (command == "endsub") {
+    } else if (str::iEquals(command, "endsub")) {
         ExecuteEndsubCommand(cmdLine->tokens, frame);
-    } else if (command == "beginsub") {
+    } else if (str::iEquals(command, "beginsub")) {
         ExecuteBeginsubCommand(cmdLine->tokens, frame);
-    } else if (command == "callarg") {
+    } else if (str::iEquals(command, "callarg")) {
         ExecuteCallargCommand(cmdLine->tokens, frame);
     } else {
         // Check if it's a label (shouldn't execute)
@@ -705,7 +684,7 @@ bool Salty::RunStep(FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& conte
                 return false;
             } else {
                 // Unknown command - TODO: delegate to extension system
-                frame->LogWarn("Unknown command: {} at line {}", command, cmdLine->lineNumber);
+                FrameLogWarn(frame, "Unknown command: {} at line {}", command, cmdLine->lineNumber);
             }
         }
     }

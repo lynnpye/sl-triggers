@@ -132,6 +132,8 @@ namespace Util
     };
 }
 
+typedef Util::String str;
+
 namespace MathUtil
 {
     [[nodiscard]] inline float Clamp(float value, float min, float max)

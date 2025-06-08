@@ -10,54 +10,61 @@
 
 namespace SLT {
 
+class BatchExecutionManager;
+
 #pragma region SLTNativeFunctions declaration
 class SLTNativeFunctions {
 public:
+// Latent functions
+static RE::BSScript::LatentStatus ExecuteStepAndPending(PAPYRUS_NATIVE_DECL);
+
+// Non-latent functions
+static void CleanupThreadContext(PAPYRUS_NATIVE_DECL);
+
+static bool DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr);
+
+static std::int32_t GetActiveScriptCount(PAPYRUS_NATIVE_DECL);
+
+static RE::TESForm* GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID);
+
+static std::vector<std::string> GetScriptsList(PAPYRUS_NATIVE_DECL);
+
+static SLTSessionId GetSessionId(PAPYRUS_NATIVE_DECL);
+
+static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input);
+
+static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey);
+
+static bool IsLoaded(PAPYRUS_NATIVE_DECL);
+
+static RE::TESQuest* MainQuest(PAPYRUS_NATIVE_DECL);
+
+static void PauseExecution(PAPYRUS_NATIVE_DECL, std::string_view reason);
+
+static bool PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
+                                                        std::string_view scriptName);
+                                
+static void Pung(PAPYRUS_NATIVE_DECL);
+
+static void RegisterExtension(PAPYRUS_NATIVE_DECL, RE::TESQuest* extensionQuest);
+
+static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
+
+static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
+
+static void ResumeExecution(PAPYRUS_NATIVE_DECL);
+
 static void SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
                                             RE::TESForm* resultingForm);
 
 static void SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
                                             bool allowed);
 
-static bool PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
-                                                        std::string_view scriptName);
-
-static std::int32_t GetActiveScriptCount(PAPYRUS_NATIVE_DECL);
-
-static SLTSessionId GetSessionId(PAPYRUS_NATIVE_DECL);
-
-static bool IsLoaded(PAPYRUS_NATIVE_DECL);
-
-static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input);
+static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
 
 static std::vector<std::string> Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input);
 
-static bool DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr);
-
-static RE::TESForm* GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID);
-
-static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
-
 static void WalkTheStack(PAPYRUS_NATIVE_DECL);
-                                
-// These will attempt auto-contexting
-static void Pung(PAPYRUS_NATIVE_DECL);
-
-static RE::BSScript::LatentStatus ExecuteStepAndPending(PAPYRUS_NATIVE_DECL);
-
-static void CleanupThreadContext(PAPYRUS_NATIVE_DECL);
-
-static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
-
-static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
-
-static std::vector<std::string> GetScriptsList(PAPYRUS_NATIVE_DECL);
-
-static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey);
-
-static RE::TESQuest* MainQuest(PAPYRUS_NATIVE_DECL);
-
-static void RegisterExtension(PAPYRUS_NATIVE_DECL, RE::TESQuest* extensionQuest);
 };
 #pragma endregion
 
@@ -144,6 +151,10 @@ public:
         return SLT::SLTNativeFunctions::GetTriggerKeys(PAPYRUS_FN_PARMS, extensionKey);
     }
 
+    static void PauseExecution(PAPYRUS_STATIC_ARGS, std::string_view reason) {
+        SLT::SLTNativeFunctions::PauseExecution(PAPYRUS_FN_PARMS, reason);
+    }
+
     static bool PrepareContextForTargetedScript(PAPYRUS_STATIC_ARGS, RE::Actor* targetActor, std::string scriptname) {
         return SLT::SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_FN_PARMS, targetActor, scriptname);
     }
@@ -162,6 +173,10 @@ public:
 
     static std::string ResolveValueVariable(PAPYRUS_STATIC_ARGS, std::string_view variableName) {
         return SLT::SLTNativeFunctions::ResolveValueVariable(PAPYRUS_FN_PARMS, variableName);
+    }
+
+    static void ResumeExecution(PAPYRUS_STATIC_ARGS) {
+        SLT::SLTNativeFunctions::ResumeExecution(PAPYRUS_FN_PARMS);
     }
 
     static void SetCustomResolveFormResult(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle, RE::TESForm* resultingForm) {
@@ -184,11 +199,13 @@ public:
         reg.RegisterStatic("CleanupThreadContext", &SLTInternalPapyrusFunctionProvider::CleanupThreadContext);
         reg.RegisterStatic("DeleteTrigger", &SLTInternalPapyrusFunctionProvider::DeleteTrigger);
         reg.RegisterStatic("GetTriggerKeys", &SLTInternalPapyrusFunctionProvider::GetTriggerKeys);
+        reg.RegisterStatic("PauseExecution", &SLTInternalPapyrusFunctionProvider::PauseExecution);
         reg.RegisterStatic("PrepareContextForTargetedScript", &SLTInternalPapyrusFunctionProvider::PrepareContextForTargetedScript);
         reg.RegisterStatic("Pung", &SLTInternalPapyrusFunctionProvider::Pung);
         reg.RegisterStatic("RegisterExtension", &SLTInternalPapyrusFunctionProvider::RegisterExtension);
         reg.RegisterStatic("ResolveFormVariable", &SLTInternalPapyrusFunctionProvider::ResolveFormVariable);
         reg.RegisterStatic("ResolveValueVariable", &SLTInternalPapyrusFunctionProvider::ResolveValueVariable);
+        reg.RegisterStatic("ResumeExecution", &SLTInternalPapyrusFunctionProvider::ResumeExecution);
         reg.RegisterStatic("SetCustomResolveFormResult", &SLTInternalPapyrusFunctionProvider::SetCustomResolveFormResult);
         reg.RegisterStatic("SetLibrariesForExtensionAllowed", &SLTInternalPapyrusFunctionProvider::SetLibrariesForExtensionAllowed);
         reg.RegisterStatic("WalkTheStack", &SLTInternalPapyrusFunctionProvider::WalkTheStack);
@@ -201,45 +218,125 @@ REGISTER_PAPYRUS_PROVIDER(SLTInternalPapyrusFunctionProvider, "sl_triggers_inter
 // SLTNativeFunctions implementation remains the same below
 
 #pragma region SLTNativeFunctions definition
-void SLTNativeFunctions::SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
-    RE::TESForm* resultingForm) {
-    auto* frame = ContextManager::GetSingleton().GetFrameContext(threadContextHandle);
-    if (!frame) {
-        logger::error("Unable to retrieve frame with threadContextHandle ({})", threadContextHandle);
+// Latent functions
+RE::BSScript::LatentStatus SLTNativeFunctions::ExecuteStepAndPending(PAPYRUS_NATIVE_DECL) {
+    if (!vm) {
+        logger::error("ExecuteStepAndPending: VM is null");
+        return RE::BSScript::LatentStatus::kFailed;
+    }
+    
+    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
+        logger::error("ExecuteStepAndPending called without valid threadContextHandle property");
+        return RE::BSScript::LatentStatus::kFailed;
+    }
+
+    auto& batchManager = BatchExecutionManager::GetSingleton();
+
+    // Check if this batch is already running
+    if (batchManager.IsExecuting(stackId)) {
+        logger::debug("ExecuteStepAndPending: batch already executing for stackId 0x{:X}", stackId);
+        return RE::BSScript::LatentStatus::kStarted;
+    }
+    
+    logger::debug("ExecuteStepAndPending: starting latent batch for context {} (stackId 0x{:X})", 
+                  contextInfo.handle, stackId);
+    
+    // Always start a batch - even if script is done, it will execute 0 steps and return false
+    bool started = batchManager.StartBatch(stackId, contextInfo);
+    
+    if (started) {
+        return RE::BSScript::LatentStatus::kStarted; // Papyrus thread suspends here
+    } else {
+        logger::error("Failed to start batch execution");
+        return RE::BSScript::LatentStatus::kFailed;
+    }
+}
+
+// Non-latent Functions
+void SLTNativeFunctions::CleanupThreadContext(PAPYRUS_NATIVE_DECL) {
+    if (!vm) return;
+    
+    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
+    
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
+        logger::error("CleanupThreadContext called without valid threadContextHandle property");
         return;
     }
-    frame->customResolveFormResult = resultingForm;
-}
-
-void SLTNativeFunctions::SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
-                                        bool allowed) {
-    FunctionLibrary* funlib = FunctionLibrary::ByExtensionKey(extensionKey);
-
-    //SLTStackAnalyzer::Walk(stackId);
-    if (funlib) {
-        funlib->enabled = allowed;
-    } else {
-        logger::error("Unable to find function library for extensionKey '{}' to set enabled to '{}'", extensionKey, allowed);
-    }
-}
-
-bool SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
-                                        std::string_view scriptName) {
-    //SLTStackAnalyzer::Walk(stackId);
+    
     auto& manager = ContextManager::GetSingleton();
-    return manager.StartSLTScript(targetActor, scriptName);
+    manager.CleanupContext(contextInfo.handle);
+}
+
+bool SLTNativeFunctions::DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr) {
+    if (!SystemUtil::File::IsValidPathComponent(extKeyStr) || !SystemUtil::File::IsValidPathComponent(trigKeyStr)) {
+        logger::error("Invalid characters in extensionKey ({}) or triggerKey ({})", extKeyStr, trigKeyStr);
+        return false;
+    }
+
+    if (extKeyStr.empty() || trigKeyStr.empty()) {
+        logger::error("extensionKey and triggerKey may not be empty extensionKey[{}]  triggerKey[{}]", extKeyStr, trigKeyStr);
+        return false;
+    }
+
+    // Ensure triggerKey ends with ".json"
+    if (trigKeyStr.length() < 5 || trigKeyStr.substr(trigKeyStr.length() - 5) != ".json") {
+        trigKeyStr = std::string(trigKeyStr) + std::string(".json");
+    }
+
+    fs::path filePath = SLT::GetPluginPath() / "extensions" / extKeyStr / trigKeyStr;
+
+    std::error_code ec;
+
+    if (!fs::exists(filePath, ec)) {
+        logger::info("Trigger file not found: {}", filePath.string());
+        return false;
+    }
+
+    if (fs::remove(filePath, ec)) {
+        logger::info("Successfully deleted: {}", filePath.string());
+        return true;
+    } else {
+        logger::info("Failed to delete {}: {}", filePath.string(), ec.message());
+        return false;
+    }
 }
 
 std::int32_t SLTNativeFunctions::GetActiveScriptCount(PAPYRUS_NATIVE_DECL) {
     return static_cast<std::int32_t>(ContextManager::GetSingleton().GetActiveContextCount());
 }
-    
-SLTSessionId SLTNativeFunctions::GetSessionId(PAPYRUS_NATIVE_DECL) {
-    return SLT::GenerateNewSessionId();
+
+RE::TESForm* SLTNativeFunctions::GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID) {
+    return FormUtil::Parse::GetForm(a_editorID);
 }
 
-bool SLTNativeFunctions::IsLoaded(PAPYRUS_NATIVE_DECL) {
-    return true;
+std::vector<std::string> SLTNativeFunctions::GetScriptsList(PAPYRUS_NATIVE_DECL) {
+    std::vector<std::string> result;
+
+    fs::path scriptsFolderPath = GetPluginPath() / "commands";
+
+    if (fs::exists(scriptsFolderPath)) {
+        for (const auto& entry : fs::directory_iterator(scriptsFolderPath)) {
+            if (entry.is_regular_file()) {
+                auto scriptname = entry.path().filename().string();
+                if (scriptname.ends_with(".ini") || scriptname.ends_with(".json")) {
+                    result.push_back(scriptname);
+                }
+            }
+        }
+    } else {
+        logger::error("Scripts folder ({}) doesn't exist. You may need to reinstall the mod.", scriptsFolderPath.string());
+    }
+
+    if (result.size() > 1) {
+        std::sort(result.begin(), result.end());
+    }
+    
+    return result;
+}
+
+SLTSessionId SLTNativeFunctions::GetSessionId(PAPYRUS_NATIVE_DECL) {
+    return SLT::GenerateNewSessionId();
 }
 
 std::string SLTNativeFunctions::GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input) {
@@ -277,6 +374,263 @@ std::string SLTNativeFunctions::GetTranslatedString(PAPYRUS_NATIVE_DECL, std::st
 
     // Fallback: return original string if no translation found
     return std::string(input);
+}
+
+std::vector<std::string> SLTNativeFunctions::GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey) {
+    std::vector<std::string> result;
+
+    fs::path triggerFolderPath = GetPluginPath() / "extensions" / extensionKey;
+
+    if (fs::exists(triggerFolderPath)) {
+        for (const auto& entry : fs::directory_iterator(triggerFolderPath)) {
+            if (entry.is_regular_file()) {
+                if (str::iEquals(entry.path().extension().string(), ".json")) {
+                    result.push_back(entry.path().filename().string());
+                }
+            }
+        }
+    } else {
+        logger::error("Trigger folder ({}) doesn't exist. You may need to reinstall the mod or at least make sure the folder is created.",
+            triggerFolderPath.string());
+    }
+    
+    if (result.size() > 1) {
+        std::sort(result.begin(), result.end());
+    }
+    
+    return result;
+}
+
+bool SLTNativeFunctions::IsLoaded(PAPYRUS_NATIVE_DECL) {
+    return true;
+}
+
+RE::TESQuest* SLTNativeFunctions::MainQuest(PAPYRUS_NATIVE_DECL) {
+    RE::TESQuest* result = nullptr;
+
+    RE::TESForm* form = FormUtil::Parse::GetForm("sl_triggersMain");
+    result = form->As<RE::TESQuest>();
+
+    return result;
+}
+
+void SLTNativeFunctions::PauseExecution(PAPYRUS_NATIVE_DECL, std::string_view reason) {
+    SLT::ContextManager::GetSingleton().PauseExecution(reason);
+}
+
+bool SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
+                                        std::string_view scriptName) {
+    LOG_FUNCTION_SCOPE("SLTNativeFunctions::PrepareContextForTargetedScript");
+    auto& manager = ContextManager::GetSingleton();
+    return manager.StartSLTScript(targetActor, scriptName);
+}
+
+void SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL) {
+    if (!vm)
+        return;
+    
+    // Validate stackId first
+    if (stackId == 0 || stackId == static_cast<RE::VMStackID>(-1)) {
+        logger::warn("Invalid stackId: 0x{:X}", stackId);
+        return;
+    }
+
+    auto* handlePolicy = vm->GetObjectHandlePolicy();
+    if (!handlePolicy) {
+        logger::error("Unable to get handle policy");
+        return;
+    }
+    
+    RE::BSScript::Stack* stackPtr = nullptr;
+    
+    try {
+        bool success = vm->GetStackByID(stackId, &stackPtr);
+        
+        if (!success) {
+            logger::warn("GetStackByID returned false for ID: 0x{:X}", stackId);
+            return;
+        }
+        
+        if (!stackPtr) {
+            logger::warn("GetStackByID succeeded but returned null pointer for ID: 0x{:X}", stackId);
+            return;
+        }
+    } catch (const std::exception& e) {
+        logger::error("Exception in GetStackByID: {}", e.what());
+        return;
+    } catch (...) {
+        logger::error("Unknown exception in GetStackByID for stackId: 0x{:X}", stackId);
+        return;
+    }
+    
+    if (!stackPtr->owningTasklet) {
+        logger::warn("Stack has no owning tasklet for ID: 0x{:X}", stackId);
+        return;
+    }
+    
+    auto taskletPtr = stackPtr->owningTasklet;
+    
+    if (!taskletPtr->topFrame) {
+        logger::warn("Tasklet has no top frame for stack ID: 0x{:X}", stackId);
+        return;
+    }
+
+    RE::BSFixedString propNameThreadContextHandle("threadContextHandle");
+    RE::BSFixedString propNameInitialScriptName("initialScriptName");
+    RE::BSFixedString targetCmdScriptName("sl_triggersCmd");
+
+    RE::BSScript::Variable& self = taskletPtr->topFrame->self;
+    if (self.IsObject()) {
+        auto selfObject = self.GetObject();
+        if (selfObject) {
+            auto* typeInfo = selfObject->GetTypeInfo();
+            std::string typeName = "<unknown or irretrievable>";
+            if (typeInfo)
+                typeName = typeInfo->GetName();
+            RE::BSFixedString selfReportedScriptName(typeName);
+            if (selfReportedScriptName == targetCmdScriptName) {
+                RE::BSScript::Variable* propThreadContextHandle = selfObject->GetProperty(propNameThreadContextHandle);
+                RE::BSScript::Variable* propInitialScriptName = selfObject->GetProperty(propNameInitialScriptName);
+
+                if (!propThreadContextHandle || !propInitialScriptName) {
+                    logger::debug("Malformed SLT AME, missing threadContextHandle and/or initialScriptName properties");
+                    return;
+                }
+        
+                ThreadContextHandle cid = 0;
+                if (propThreadContextHandle && propThreadContextHandle->IsInt()) {
+                    cid = propThreadContextHandle->GetSInt();
+                }
+
+                if (cid) {
+                    logger::warn("AME already setup with threadContextHandle, ignoring");
+                } else {
+                    // find target based on actor and get threadContextHandle for !isClaimed
+                    auto* handlePolicy = vm->GetObjectHandlePolicy();
+                    auto* bindPolicy = vm->GetObjectBindPolicy();
+                    if (!handlePolicy || !bindPolicy) {
+                        logger::error("Unable to obtain vm policies");
+                        return;
+                    }
+                    auto* ameRawPtr = handlePolicy->GetObjectForHandle(RE::ActiveEffect::VMTYPEID, selfObject->GetHandle());
+                    if (!ameRawPtr) {
+                        logger::error("GetObjectForHandle returned null AME");
+                        return;
+                    }
+                    RE::ActiveEffect* ame = static_cast<RE::ActiveEffect*>(ameRawPtr);
+                    if (!ame) {
+                        logger::error("Unable to cast to correct AME");
+                        return;
+                    }
+                    RE::Actor* actor = ame->GetCasterActor().get();
+                    if (!actor) {
+                        logger::error("SLT AME missing a caster Actor");
+                        return;
+                    }
+                    ContextManager& contextManager = ContextManager::GetSingleton();
+                    auto* targetContext = contextManager.CreateTargetContext(actor);
+
+                    auto it = std::find_if(targetContext->threads.begin(), targetContext->threads.end(),
+                    [&](const std::shared_ptr<ThreadContext>& tcptr) -> bool {
+                        return !tcptr->isClaimed && !tcptr->wasClaimed;
+                    });
+
+                    if (it == targetContext->threads.end()) {
+                        it = std::find_if(targetContext->threads.begin(), targetContext->threads.end(),
+                        [&](const std::shared_ptr<ThreadContext>& tcptr) -> bool {
+                            return !tcptr->isClaimed;
+                        });
+                    }
+
+                    if (it != targetContext->threads.end()) {
+                        auto& threadCon = *it;
+                        propThreadContextHandle->SetSInt(threadCon->threadContextHandle);
+                        propInitialScriptName->SetString(threadCon->initialScriptName);
+                    }
+                    else {
+                        logger::error("Unable to find available unclaimed threadContext");
+                        return;
+                    }
+                }
+            }
+            else {
+                logger::error("AME is not {}", targetCmdScriptName.c_str());
+                return;
+            }
+        }
+        else {
+            logger::error("AME could not obtain Object");
+            return;
+        }
+    }
+    else {
+        logger::error("AME is not Object");
+        return;
+    }
+}
+
+void SLTNativeFunctions::RegisterExtension(PAPYRUS_NATIVE_DECL, RE::TESQuest* extensionQuest) {
+    SLTExtensionTracker::AddQuest(extensionQuest, stackId);
+    SLT::ModEvent::SendToAll("_slt_event_slt_register_extension_", static_cast<RE::TESQuest*>(extensionQuest));
+}
+
+RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
+    if (!vm) return nullptr;
+    
+    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
+    
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
+        logger::error("ResolveFormVariable called without valid threadContextHandle property");
+        return nullptr;
+    }
+
+    RE::TESForm* finalResolution = Salty::ResolveFormVariable(token, contextInfo.frame);
+    return finalResolution;
+}
+
+std::string SLTNativeFunctions::ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
+    if (!vm) return "";
+    
+    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
+
+    
+    if (!contextInfo.isValid || contextInfo.handle == 0) {
+        logger::error("ResolveValueVariable called without valid threadContextHandle property");
+        return "";
+    }
+
+    std::string finalResolution = ContextManager::GetSingleton().ResolveValueVariable(contextInfo.frame, token);
+    return finalResolution;
+}
+
+void SLTNativeFunctions::ResumeExecution(PAPYRUS_NATIVE_DECL) {
+    SLT::ContextManager::GetSingleton().ResumeExecution();
+}
+
+void SLTNativeFunctions::SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
+    RE::TESForm* resultingForm) {
+    auto* frame = ContextManager::GetSingleton().GetFrameContext(threadContextHandle);
+    if (!frame) {
+        logger::error("Unable to retrieve frame with threadContextHandle ({})", threadContextHandle);
+        return;
+    }
+    frame->customResolveFormResult = resultingForm;
+}
+
+void SLTNativeFunctions::SetLibrariesForExtensionAllowed(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, 
+                                        bool allowed) {
+    FunctionLibrary* funlib = FunctionLibrary::ByExtensionKey(extensionKey);
+
+    //SLTStackAnalyzer::Walk(stackId);
+    if (funlib) {
+        funlib->enabled = allowed;
+    } else {
+        logger::error("Unable to find function library for extensionKey '{}' to set enabled to '{}'", extensionKey, allowed);
+    }
+}
+
+bool SLTNativeFunctions::SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b) {
+    return SmartComparator::SmartEquals(std::string(a), std::string(b));
 }
 
 std::vector<std::string> SLTNativeFunctions::Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input) {
@@ -343,213 +697,13 @@ std::vector<std::string> SLTNativeFunctions::Tokenize(PAPYRUS_NATIVE_DECL, std::
     if (!current.empty()) {
         tokens.push_back(current);
     }
-
-    //logger::info("With input({}) Token count: {}", input, tokens.size());
-    for (i = 0; i < tokens.size(); ++i) {
-        //logger::info("Token {}: [{}]", i, tokens[i]);
-    }
     return tokens;
-}
-
-bool SLTNativeFunctions::DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr) {
-    if (!SystemUtil::File::IsValidPathComponent(extKeyStr) || !SystemUtil::File::IsValidPathComponent(trigKeyStr)) {
-        logger::error("Invalid characters in extensionKey ({}) or triggerKey ({})", extKeyStr, trigKeyStr);
-        return false;
-    }
-
-    if (extKeyStr.empty() || trigKeyStr.empty()) {
-        logger::error("extensionKey and triggerKey may not be empty extensionKey[{}]  triggerKey[{}]", extKeyStr, trigKeyStr);
-        return false;
-    }
-
-    // Ensure triggerKey ends with ".json"
-    if (trigKeyStr.length() < 5 || trigKeyStr.substr(trigKeyStr.length() - 5) != ".json") {
-        trigKeyStr = std::string(trigKeyStr) + std::string(".json");
-    }
-
-    fs::path filePath = SLT::GetPluginPath() / "extensions" / extKeyStr / trigKeyStr;
-
-    std::error_code ec;
-
-    if (!fs::exists(filePath, ec)) {
-        logger::info("Trigger file not found: {}", filePath.string());
-        return false;
-    }
-
-    if (fs::remove(filePath, ec)) {
-        logger::info("Successfully deleted: {}", filePath.string());
-        return true;
-    } else {
-        logger::info("Failed to delete {}: {}", filePath.string(), ec.message());
-        return false;
-    }
-}
-
-RE::TESForm* SLTNativeFunctions::GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID) {
-    return FormUtil::Parse::GetForm(a_editorID);
-}
-
-bool SLTNativeFunctions::SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b) {
-    return SmartComparator::SmartEquals(std::string(a), std::string(b));
 }
 
 void SLTNativeFunctions::WalkTheStack(PAPYRUS_NATIVE_DECL) {
     SLTStackAnalyzer::Walk(stackId);
 }
 
-void SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL) {
-    if (!vm)
-        return;
-    
-    //SLTStackAnalyzer::Walk(stackId);
-    std::ignore = SLTStackAnalyzer::GetAMEContextInfo(stackId);
-}
-
-// In sl_triggers.cpp - Add this after the existing ExecuteStepAndPending function
-
-// Forward declaration
-class BatchExecutionManager;
-
-RE::BSScript::LatentStatus SLTNativeFunctions::ExecuteStepAndPending(PAPYRUS_NATIVE_DECL) {
-    if (!vm) {
-        logger::error("ExecuteStepAndPending: VM is null");
-        return RE::BSScript::LatentStatus::kFailed;
-    }
-    
-    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
-    if (!contextInfo.isValid || contextInfo.handle == 0) {
-        logger::error("ExecuteStepAndPending called without valid threadContextHandle property");
-        return RE::BSScript::LatentStatus::kFailed;
-    }
-
-    auto& batchManager = BatchExecutionManager::GetSingleton();
-
-    // Check if this batch is already running
-    if (batchManager.IsExecuting(stackId)) {
-        logger::debug("ExecuteStepAndPending: batch already executing for stackId 0x{:X}", stackId);
-        return RE::BSScript::LatentStatus::kStarted;
-    }
-    
-    logger::debug("ExecuteStepAndPending: starting latent batch for context {} (stackId 0x{:X})", 
-                  contextInfo.handle, stackId);
-    
-    // Always start a batch - even if script is done, it will execute 0 steps and return false
-    bool started = batchManager.StartBatch(stackId, contextInfo);
-    
-    if (started) {
-        return RE::BSScript::LatentStatus::kStarted; // Papyrus thread suspends here
-    } else {
-        logger::error("Failed to start batch execution");
-        return RE::BSScript::LatentStatus::kFailed;
-    }
-}
-
-void SLTNativeFunctions::CleanupThreadContext(PAPYRUS_NATIVE_DECL) {
-    if (!vm) return;
-    
-    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
-    
-    if (!contextInfo.isValid || contextInfo.handle == 0) {
-        logger::error("CleanupThreadContext called without valid threadContextHandle property");
-        return;
-    }
-    
-    auto& manager = ContextManager::GetSingleton();
-    manager.CleanupContext(contextInfo.handle);
-}
-
-std::string SLTNativeFunctions::ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
-    if (!vm) return "";
-    
-    SLTStackAnalyzer::Walk(stackId);
-    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
-    
-    if (!contextInfo.isValid || contextInfo.handle == 0) {
-        logger::error("ResolveValueVariable called without valid threadContextHandle property");
-        return "";
-    }
-
-    return ContextManager::GetSingleton().ResolveValueVariable(contextInfo.frame, token);
-}
-
-RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view token) {
-    if (!vm) return nullptr;
-    
-    auto contextInfo = SLTStackAnalyzer::GetAMEContextInfo(stackId);
-    
-    if (!contextInfo.isValid || contextInfo.handle == 0) {
-        logger::error("ResolveFormVariable called without valid threadContextHandle property");
-        return nullptr;
-    }
-
-    return Salty::ResolveFormVariable(token, contextInfo.frame);
-}
-
-std::vector<std::string> SLTNativeFunctions::GetScriptsList(PAPYRUS_NATIVE_DECL) {
-    std::vector<std::string> result;
-
-    fs::path scriptsFolderPath = GetPluginPath() / "commands";
-
-    if (fs::exists(scriptsFolderPath)) {
-        for (const auto& entry : fs::directory_iterator(scriptsFolderPath)) {
-            if (entry.is_regular_file()) {
-                auto scriptname = entry.path().filename().string();
-                if (scriptname.ends_with(".ini") || scriptname.ends_with(".json")) {
-                    result.push_back(scriptname);
-                }
-            }
-        }
-    } else {
-        logger::error("Scripts folder ({}) doesn't exist. You may need to reinstall the mod.", scriptsFolderPath.string());
-    }
-
-    if (result.size() > 1) {
-        std::sort(result.begin(), result.end());
-    }
-    
-    return result;
-}
-
-std::vector<std::string> SLTNativeFunctions::GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey) {
-    std::vector<std::string> result;
-
-    fs::path triggerFolderPath = GetPluginPath() / "extensions" / extensionKey;
-
-    if (fs::exists(triggerFolderPath)) {
-        for (const auto& entry : fs::directory_iterator(triggerFolderPath)) {
-            if (entry.is_regular_file()) {
-                if (entry.path().extension().string() == ".json") {
-                    result.push_back(entry.path().filename().string());
-                }
-            }
-        }
-    } else {
-        logger::error("Trigger folder ({}) doesn't exist. You may need to reinstall the mod or at least make sure the folder is created.",
-            triggerFolderPath.string());
-    }
-    
-    if (result.size() > 1) {
-        std::sort(result.begin(), result.end());
-    }
-    
-    return result;
-}
-
-RE::TESQuest* SLTNativeFunctions::MainQuest(PAPYRUS_NATIVE_DECL) {
-    RE::TESQuest* result = nullptr;
-
-    RE::TESForm* form = FormUtil::Parse::GetForm("sl_triggersMain");
-    result = form->As<RE::TESQuest>();
-
-    return result;
-}
-
-
-void SLTNativeFunctions::RegisterExtension(PAPYRUS_NATIVE_DECL, RE::TESQuest* extensionQuest) {
-    SLTExtensionTracker::AddQuest(extensionQuest, stackId);
-    auto papquest = PapyrusConverter::QuestToPapyrus(extensionQuest, vm);
-    SLT::ModEvent::SendToAll("_slt_event_slt_register_extension_", static_cast<RE::TESQuest*>(extensionQuest));
-}
 
 #pragma endregion
 
@@ -591,14 +745,7 @@ OnPreLoadGame([]{
 OnPostLoadGame([]{
     // Resume execution after load completes
     SLT::GenerateNewSessionId(true);
-    ContextManager::GetSingleton().ResumeExecution();
     logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::GetSessionId());
-});
-
-OnSaveGame([]{
-    // Don't pause execution for saves during play
-    // The coordination lock in ContextManager handles consistency during serialization
-    logger::info("Save initiated - using coordination lock for consistency");
 });
 
 #pragma endregion

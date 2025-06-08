@@ -12,6 +12,33 @@ namespace {
         auto trimmed = Util::String::trim(line);
         return trimmed.empty() || trimmed[0] == ';';
     }
+
+    std::string TrimString(const std::string& str) {
+        size_t first = str.find_first_not_of(" \t\n\r");
+        if (first == std::string::npos)
+            return "";
+        size_t last = str.find_last_not_of(" \t\n\r");
+        return str.substr(first, last - first + 1);
+    }
+
+    // Modern C++ way: Use std::istringstream with std::getline
+    std::vector<std::string> SplitLinesPreservingCount(const std::string& content) {
+        std::vector<std::string> lines;
+        std::istringstream stream(content);
+        std::string line;
+        
+        // std::getline handles \n, \r\n, and \r automatically
+        while (std::getline(stream, line)) {
+            lines.push_back(TrimString(line));
+        }
+        
+        // Handle case where file doesn't end with newline
+        if (!content.empty() && content.back() != '\n' && content.back() != '\r') {
+            // Last line was already handled by the while loop
+        }
+        
+        return lines;
+    }
 }
 
 #pragma region Parser Implementation
@@ -62,9 +89,9 @@ ParseResult Parser::ParseScript(FrameContext* frame) {
 }
 
 std::unique_ptr<IScriptParser> Parser::CreateParser(std::string_view extension) {
-    if (extension == ".ini") {
+    if (str::iEquals(extension, ".ini")) {
         return std::make_unique<INIParser>();
-    } else if (extension == ".json") {
+    } else if (str::iEquals(extension, ".json")) {
         return std::make_unique<JSONParser>();
     }
     
@@ -130,36 +157,6 @@ std::unique_ptr<CommandLine> IScriptParser::CreateCommandLine(std::size_t lineNu
 
 #pragma region INIParser Implementation
 
-// Helper functions - modern C++ approach
-namespace {
-    std::string TrimString(const std::string& str) {
-        size_t first = str.find_first_not_of(" \t\n\r");
-        if (first == std::string::npos)
-            return "";
-        size_t last = str.find_last_not_of(" \t\n\r");
-        return str.substr(first, last - first + 1);
-    }
-
-    // Modern C++ way: Use std::istringstream with std::getline
-    std::vector<std::string> SplitLinesPreservingCount(const std::string& content) {
-        std::vector<std::string> lines;
-        std::istringstream stream(content);
-        std::string line;
-        
-        // std::getline handles \n, \r\n, and \r automatically
-        while (std::getline(stream, line)) {
-            lines.push_back(TrimString(line));
-        }
-        
-        // Handle case where file doesn't end with newline
-        if (!content.empty() && content.back() != '\n' && content.back() != '\r') {
-            // Last line was already handled by the while loop
-        }
-        
-        return lines;
-    }
-}
-
 ParseResult INIParser::Parse(const fs::path& filePath, FrameContext* frame) {
     if (!frame) {
         return ParseResult::NullFrame;
@@ -214,8 +211,9 @@ std::unique_ptr<CommandLine> INIParser::ParseINILine(std::string_view line, std:
         std::string labelName = cleanLine.substr(1, cleanLine.length() - 2);
         labelName = Util::String::trim(labelName);
         if (!labelName.empty()) {
-            // Create a label definition command
-            return CreateCommandLine(lineNumber, {":", labelName});
+            std::string normalizedLabel = "[" + labelName + "]";
+            logger::debug("making label({})", normalizedLabel);
+            return CreateCommandLine(lineNumber, {normalizedLabel});
         }
         return nullptr;
     }
@@ -329,7 +327,31 @@ ParseResult JSONParser::Parse(const fs::path& filePath, FrameContext* frame) {
     }
     
     try {
-        frame->scriptTokens = ParseJSONCommands(jsonData);
+        frame->scriptTokens.clear();// = ParseJSONCommands(jsonData);
+        
+    
+        // Expected format: {"cmd": [["command", "arg1", "arg2"], ["command2", "arg1"], ...]}
+        if (!jsonData.is_object()) {
+            logger::error("JSON root must be an object");
+        }
+        else if (!jsonData.contains("cmd")) {
+            logger::error("JSON must contain 'cmd' array");
+        }
+        else {
+            const auto& cmdArray = jsonData["cmd"];
+            if (!cmdArray.is_array()) {
+                logger::error("'cmd' must be an array");
+            }
+            else {
+                std::size_t lineNumber = 1;
+                for (const auto& command : cmdArray) {
+                    auto cmdLine = ProcessJSONCommand(command, lineNumber++);
+                    if (cmdLine) {
+                        frame->scriptTokens.push_back(std::move(cmdLine));
+                    }
+                }
+            }
+        }
     } catch (const std::exception& e) {
         logger::error("JSON command processing failed for {}: {}", filePath.string(), e.what());
         return ParseResult::SyntaxError;
@@ -341,37 +363,6 @@ ParseResult JSONParser::Parse(const fs::path& filePath, FrameContext* frame) {
     }
     
     return ParseResult::Success;
-}
-
-std::vector<std::unique_ptr<CommandLine>> JSONParser::ParseJSONCommands(const nlohmann::json& json) {
-    std::vector<std::unique_ptr<CommandLine>> commands;
-    
-    // Expected format: {"cmd": [["command", "arg1", "arg2"], ["command2", "arg1"], ...]}
-    if (!json.is_object()) {
-        logger::error("JSON root must be an object");
-        return commands;  // Return empty vector instead of throwing
-    }
-    
-    if (!json.contains("cmd")) {
-        logger::error("JSON must contain 'cmd' array");
-        return commands;
-    }
-    
-    const auto& cmdArray = json["cmd"];
-    if (!cmdArray.is_array()) {
-        logger::error("'cmd' must be an array");
-        return commands;
-    }
-    
-    std::size_t lineNumber = 1;
-    for (const auto& command : cmdArray) {
-        auto cmdLine = ProcessJSONCommand(command, lineNumber++);
-        if (cmdLine) {
-            commands.push_back(std::move(cmdLine));
-        }
-    }
-    
-    return commands;
 }
 
 std::unique_ptr<CommandLine> JSONParser::ProcessJSONCommand(const nlohmann::json& command, 

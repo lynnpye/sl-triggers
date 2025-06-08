@@ -51,9 +51,6 @@ RE::TESForm* FormResolver::CallCustomResolveForm(RE::TESQuest* quest,
         static_cast<std::int32_t>(threadHandle)
     );
     
-    logger::debug("Calling CustomResolveForm for token '{}' on quest 0x{:X} with threadHandle {}", 
-                  token, quest->GetFormID(), threadHandle);
-    
     // Dispatch the call to main Papyrus thread
     bool dispatched = vm->DispatchMethodCall(papyrusQuest, "CustomResolveForm", args, callback);
     if (!dispatched) {
@@ -89,6 +86,7 @@ RE::TESForm* FormResolver::CallCustomResolveForm(RE::TESQuest* quest,
 
 bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect* cmdPrimary, std::vector<RE::BSFixedString> params) {
     if (!cmdPrimary || !targetActor || params.size() == 0) {
+        logger::error("Cannot call FormResolver::RunOperationOnActor with invalid cmdPrimary, targetActor, or params");
         return false;
     }
     
@@ -133,7 +131,7 @@ bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect*
         return false;
     }
     
-    // I understand why a wait_for() was originally used, but unfortunately my users
+    // I know a wait_for() was originally used, but unfortunately my users
     // could very well run a command like Utility.Wait(600) to wait for 10 minutes.
     // I can't predict how long any given actor operation will be.
     // This, I assume, has ramifications for the serialization/deserialization issues
@@ -149,8 +147,9 @@ bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect*
         if (status == std::future_status::ready) {
             // Operation completed normally
             try {
-                bool resolved = resultFuture.get();
-                return resolved;
+                //bool resolved = resultFuture.get();
+                // doesn't matter how this return value resolved... these don't return anything
+                return true;
             } catch (const std::exception& e) {
                 logger::error("Exception in RunOperationOnActor result: {}", e.what());
                 return false;
@@ -170,33 +169,6 @@ bool FormResolver::RunOperationOnActor(RE::Actor* targetActor, RE::ActiveEffect*
             return false;
         }
     }
-
-    /*
-    // Wait for the result (this blocks the background thread, NOT the main Papyrus thread)
-    auto status = resultFuture.wait_for(std::chrono::seconds(5));
-    if (status == std::future_status::ready) {
-        try {
-            bool resolved = resultFuture.get();
-            if (resolved) {
-                // Extension called SetCustomResolveFormResult and returned true
-                auto* resultForm = frame->customResolveFormResult;
-                logger::debug("CustomResolveForm resolved token '{}' to form 0x{:X}", 
-                              token, resultForm ? resultForm->GetFormID() : 0);
-                return resultForm;
-            } else {
-                // Extension returned false - it couldn't resolve this token
-                logger::debug("CustomResolveForm could not resolve token '{}'", token);
-                return nullptr;
-            }
-        } catch (const std::exception& e) {
-            logger::error("Exception in CustomResolveForm result: {}", e.what());
-            return nullptr;
-        }
-    } else {
-        logger::warn("CustomResolveForm timeout for token '{}' on quest 0x{:X}", token, quest->GetFormID());
-        return nullptr;
-    }
-    */
 }
 
 bool BatchExecutionManager::StartBatch(RE::VMStackID stackId, SLTStackAnalyzer::AMEContextInfo contextInfo) {
