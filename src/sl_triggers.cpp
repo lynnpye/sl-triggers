@@ -7,6 +7,7 @@
 #include "questor.h"
 #include "papyrus_conversion.h"
 #include "modevent.h"
+#include "forge.h"
 
 namespace SLT {
 
@@ -53,9 +54,6 @@ static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, std::string_view va
 static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, std::string_view variableName);
 
 static void ResumeExecution(PAPYRUS_NATIVE_DECL);
-
-static void SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
-                                            RE::TESForm* resultingForm);
 
 static void SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionKey,
                                             bool enabledState);
@@ -183,10 +181,6 @@ public:
         SLT::SLTNativeFunctions::ResumeExecution(PAPYRUS_FN_PARMS);
     }
 
-    static void SetCustomResolveFormResult(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle, RE::TESForm* resultingForm) {
-        SLT::SLTNativeFunctions::SetCustomResolveFormResult(PAPYRUS_FN_PARMS, threadContextHandle, resultingForm);
-    }
-
     static void SetExtensionEnabled(PAPYRUS_STATIC_ARGS, std::string_view extensionKey, bool enabledState) {
         SLT::SLTNativeFunctions::SetExtensionEnabled(PAPYRUS_FN_PARMS, extensionKey, enabledState);
     }
@@ -210,7 +204,6 @@ public:
         reg.RegisterStatic("ResolveFormVariable", &SLTInternalPapyrusFunctionProvider::ResolveFormVariable);
         reg.RegisterStatic("ResolveValueVariable", &SLTInternalPapyrusFunctionProvider::ResolveValueVariable);
         reg.RegisterStatic("ResumeExecution", &SLTInternalPapyrusFunctionProvider::ResumeExecution);
-        reg.RegisterStatic("SetCustomResolveFormResult", &SLTInternalPapyrusFunctionProvider::SetCustomResolveFormResult);
         reg.RegisterStatic("SetExtensionEnabled", &SLTInternalPapyrusFunctionProvider::SetExtensionEnabled);
         reg.RegisterStatic("WalkTheStack", &SLTInternalPapyrusFunctionProvider::WalkTheStack);
     }
@@ -424,7 +417,6 @@ void SLTNativeFunctions::PauseExecution(PAPYRUS_NATIVE_DECL, std::string_view re
 
 bool SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
                                         std::string_view scriptName) {
-    LOG_FUNCTION_SCOPE("SLTNativeFunctions::PrepareContextForTargetedScript");
     auto& manager = ContextManager::GetSingleton();
     return manager.StartSLTScript(targetActor, scriptName);
 }
@@ -616,16 +608,6 @@ void SLTNativeFunctions::ResumeExecution(PAPYRUS_NATIVE_DECL) {
     SLT::ContextManager::GetSingleton().ResumeExecution();
 }
 
-void SLTNativeFunctions::SetCustomResolveFormResult(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle,
-    RE::TESForm* resultingForm) {
-    auto* frame = ContextManager::GetSingleton().GetFrameContext(threadContextHandle);
-    if (!frame) {
-        logger::error("Unable to retrieve frame with threadContextHandle ({})", threadContextHandle);
-        return;
-    }
-    frame->customResolveFormResult = resultingForm;
-}
-
 void SLTNativeFunctions::SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionKey, bool enabledState) {
     SLTExtensionTracker::SetEnabled(extensionKey, enabledState);
     FunctionLibrary* funlib = FunctionLibrary::ByExtensionKey(extensionKey);
@@ -723,6 +705,7 @@ OnDataLoaded([]{
     if (serialization) {
         serialization->SetSaveCallback([](SKSE::SerializationInterface* intfc) {
             if (intfc->OpenRecord('SLTR', 1)) {
+                OnOptionalSave(intfc);
                 ContextManager::GetSingleton().Serialize(intfc);
             }
         });
@@ -731,13 +714,15 @@ OnDataLoaded([]{
             std::uint32_t type, version, length;
             while (intfc->GetNextRecordInfo(type, version, length)) {
                 if (type == 'SLTR' && version == 1) {
+                    OnOptionalLoad(intfc);
                     ContextManager::GetSingleton().Deserialize(intfc);
                 }
             }
         });
         
-        serialization->SetRevertCallback([](SKSE::SerializationInterface*) {
+        serialization->SetRevertCallback([](SKSE::SerializationInterface* intfc) {
             // Clear all contexts on new game
+            OnOptionalRevert(intfc);
             ContextManager::GetSingleton().CleanupAllContexts();
         });
     }

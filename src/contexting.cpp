@@ -808,28 +808,8 @@ bool ContextManager::ResolveFormVariable(FrameContext* frame, std::string_view t
                 case 2: params.push_back(RE::BSFixedString("resolve_partner3")); break;
                 case 3: params.push_back(RE::BSFixedString("resolve_partner4")); break;
             }
-            if (FormResolver::RunOperationOnActor(frame, frame->thread->target->AsActor(), frame->thread->ame, params)) {
-                // extract from the ame
-                auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-                if (vm) {
-                    auto* handleP = vm->GetObjectHandlePolicy();
-                    auto* bindP = vm->GetObjectBindPolicy();
-                    if (handleP && bindP) {
-                        auto vmhandle = handleP->GetHandleForObject(RE::ActiveEffect::VMTYPEID, frame->thread->ame);
-                        RE::BSTSmartPointer<RE::BSScript::Object> ameObj;
-                        bindP->BindObject(ameObj, vmhandle);
-                        if (ameObj) {
-                            auto* varCustomResolveFormValue = ameObj->GetProperty(RE::BSFixedString("CustomResolveFormResult"));
-                            if (varCustomResolveFormValue && varCustomResolveFormValue->IsObject()) {
-                                auto formResult = varCustomResolveFormValue->GetObject();
-                                if (formResult) {
-                                    auto* actorFormPtr = handleP->GetObjectForHandle(RE::Actor::FORMTYPE, formResult->GetHandle());
-                                    frame->customResolveFormResult = actorFormPtr->As<RE::Actor>();
-                                }
-                            }
-                        }
-                    }
-                }
+            if (!FormResolver::RunOperationOnActor(frame, frame->thread->target->AsActor(), frame->thread->ame, params)) {
+                logger::error("Unable to resolve SexLab partner variable");
             }
         }
     }
@@ -1062,7 +1042,12 @@ bool ThreadContext::ExecuteNextStep(SLTStackAnalyzer::AMEContextInfo& contextInf
     }
     
     if (currentFrame && currentFrame->IsReady()) {
-        return currentFrame->RunStep(contextInfo);
+        bool frameRunStepResult = currentFrame->RunStep(contextInfo);
+        if (currentFrame->popAfterStepReturn) {
+            currentFrame->popAfterStepReturn = false;
+            return PopFrameContext();
+        }
+        return frameRunStepResult;
     }
     
     return false;
@@ -1226,43 +1211,6 @@ bool FrameContext::IsReady() {
     return Salty::AdvanceToNextRunnableStep(this);
 }
 
-void FrameContext::FetchMostRecentResult() {
-    LOG_FUNCTION_SCOPE("FetchMostRecentResult");
-    auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-    if (vm) {
-        auto* handleP = vm->GetObjectHandlePolicy();
-        auto* bindP = vm->GetObjectBindPolicy();
-        if (handleP && bindP && this && this->thread && this->thread->ame) {
-            auto vmhandle = handleP->GetHandleForObject(RE::ActiveEffect::VMTYPEID, this->thread->ame);
-            if (vmhandle) {
-                RE::BSTSmartPointer<RE::BSScript::Object> ameObj;
-                bindP->BindObject(ameObj, vmhandle);
-                if (ameObj) {
-                    auto* varCustomResolveResult = ameObj->GetProperty(RE::BSFixedString("CustomResolveResult"));
-                    if (varCustomResolveResult && varCustomResolveResult->IsString()) {
-                        this->mostRecentResult = varCustomResolveResult->GetString();
-                    }
-                    else {
-                        logger::error("Unable to get property");
-                    }
-                }
-                else {
-                    logger::error("Unable to bind ameObj using vmhandle({})", vmhandle);
-                }
-            }
-            else {
-                logger::error("Unable to retrieve vmhandle");
-            }
-        }
-        else {
-            logger::error("Unable to retrieve one of (handlePolicy, bindPolicy, framecontext, frame->thread, frame->thread->ame)");
-        }
-    }
-    else {
-        logger::error("Unable to retrieve vm");
-    }
-}
-
 bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
     auto& manager = ContextManager::GetSingleton();
     const int MAX_BATCHED_STEPS = 100;  // Reduced for coroutine compatibility
@@ -1291,7 +1239,8 @@ bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
         // is current frame at end?
         if (this->currentLine >= this->scriptTokens.size()) {
             // we should pop and leave
-            return this->thread->PopFrameContext();
+            this->popAfterStepReturn = true;
+            return true; //this->thread->PopFrameContext();
         }
 
         if (this != this->thread->callStack.back().get()) {

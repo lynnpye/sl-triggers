@@ -15,15 +15,15 @@ bool FormResolver::RunOperationOnActor(FrameContext* frame, RE::Actor* targetAct
     
     auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
     if (!vm) {
-        logger::error("Failed to get VM singleton for CustomResolveForm");
+        logger::error("Failed to get VM singleton for RunOperationOnActor");
         return false;
     }
     
     frame->mostRecentResult = "";
     
     // Create promise/future pair for string result
-    std::promise<std::string> resultPromise;
-    std::future<std::string> resultFuture = resultPromise.get_future();
+    std::promise<SLT::Optional*> resultPromise;
+    std::future<SLT::Optional*> resultFuture = resultPromise.get_future();
     
     // Create callback
     RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
@@ -63,7 +63,41 @@ bool FormResolver::RunOperationOnActor(FrameContext* frame, RE::Actor* targetAct
             // Operation completed normally
             try {
                 //bool resolved = resultFuture.get();
-                 frame->mostRecentResult = resultFuture.get();
+                auto* opt = resultFuture.get();
+                if (opt && opt->IsValid()) {
+                    switch (opt->GetType()) {
+                        case Optional::Type::String:
+                        {
+                            frame->mostRecentResult = opt->GetString();
+                        }
+                        break;
+                        case Optional::Type::Int:
+                        {
+                            frame->mostRecentResult = std::to_string(opt->GetInt());   
+                        }
+                        break;
+                        case Optional::Type::Float:
+                        {
+                            frame->mostRecentResult = std::to_string(opt->GetFloat());
+                        }
+                        break;
+                        case Optional::Type::Bool:
+                        {
+                            frame->mostRecentResult = std::to_string(opt->GetBool() ? 1 : 0);
+                        }
+                        break;
+                        case Optional::Type::None:
+                        {
+                            frame->mostRecentResult = "";
+                        }
+                        break;
+                        case Optional::Type::Form:
+                        {
+                            frame->customResolveFormResult = opt->GetForm();
+                        }
+                        break;
+                    }
+                }
                 return true;
             } catch (const std::exception& e) {
                 logger::error("Exception in RunOperationOnActor result: {}", e.what());

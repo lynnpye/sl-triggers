@@ -3,6 +3,7 @@ set(sources ${sources}
     src/core.cpp
     src/coroutines.cpp
     src/engine.cpp
+    src/forge.cpp
     src/main.cpp
     src/parsing.cpp
     src/questor.cpp

@@ -196,11 +196,12 @@ bool FunctionLibrary::PrecacheLibraries() {
     return true;
 }
 
-OnDataLoaded([]{
-    {
+OnAfterSKSEInit([]{
     fs::path debugmsg_log = GetPluginPath() / "debugmsg.log";
     std::ofstream file(debugmsg_log, std::ios::trunc);
-    }
+});
+
+OnDataLoaded([]{
     FunctionLibrary::PrecacheLibraries();
 })
 #pragma endregion
@@ -228,7 +229,6 @@ using namespace SLT;
         private:
             std::function<void()> onDone;
     };
-
     
     // Core resolution function - this is where the magic happens
     // NOTE: All variable access now goes through ContextManager's coordination lock
@@ -244,6 +244,23 @@ using namespace SLT;
         }
 
         return form->As<RE::Actor>();
+    }
+
+    bool TryFunctionLibrary(const std::vector<std::string>& tokens, FrameContext* frame, RE::Actor* targetActor, RE::ActiveEffect* cmdPrimary) {
+        if (!frame || !frame->thread || !frame->thread->target) {
+            logger::error("TryFunctionLibrary: frame, frame->thread, or frame->thread->target is null");
+            return false;
+        }
+
+        logger::debug("TryFunctionLibrary({})", str::Join(tokens, "), ("));
+        
+        // Convert resolved tokens to BSFixedString vector
+        std::vector<RE::BSFixedString> param;
+        for (const auto& token : tokens) {
+            param.push_back(ResolveValueVariable(token, frame));
+        }
+        
+        return FormResolver::RunOperationOnActor(frame, targetActor, cmdPrimary, param);
     }
 
     // Label extraction
@@ -310,11 +327,27 @@ using namespace SLT;
             return;
         }
         
-        logger::debug("Set Command [({})]", str::Join(tokens, "), ("));
         std::string value = ResolveValueVariable(tokens[2], frame);
         
         // Handle arithmetic operations: set $var $val1 + $val2
-        if (tokens.size() == 5) {
+        if (tokens.size() > 3 && str::iEquals(value, "resultfrom")) {
+            std::string subcode = ResolveValueVariable(tokens[3], frame);
+            if (!subcode.empty()) {
+                std::vector<std::string> subcodeTokens(
+                    tokens.size() > 3 ? tokens.begin() + 3 : tokens.end(),
+                    tokens.end()
+                );
+                subcodeTokens[0] = subcode;
+
+                if (TryFunctionLibrary(subcodeTokens, frame, frame->thread->target->AsActor(), frame->thread->ame)) {
+                    value = frame->mostRecentResult;
+                }
+            } else {
+                logger::error("Unable to resolve function for 'set resultfrom' with ({})", tokens[3]);
+                return;
+            }
+        } else if (tokens.size() == 3) {
+        } else if (tokens.size() == 5) {
             std::string val1 = value;
             std::string op = tokens[3];
             std::string val2 = ResolveValueVariable(tokens[4], frame);
@@ -554,23 +587,6 @@ using namespace SLT;
         }
     }
 
-    bool TryFunctionLibrary(const std::vector<std::string>& tokens, FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& contextInfo) {
-        if (!frame || !frame->thread || !frame->thread->target) {
-            logger::error("TryFunctionLibrary: frame, frame->thread, or frame->thread->target is null");
-            return false;
-        }
-
-        logger::debug("TryFunctionLibrary({})", tokens[0]);
-        
-        // Convert resolved tokens to BSFixedString vector
-        std::vector<RE::BSFixedString> param;
-        for (const auto& token : tokens) {
-            param.push_back(ResolveValueVariable(token, frame));
-        }
-        
-        return FormResolver::RunOperationOnActor(frame, contextInfo.target, contextInfo.ame, param);
-    }
-
 }
 
 #pragma endregion
@@ -584,49 +600,7 @@ RE::TESForm* Salty::ResolveFormVariable(std::string_view token, FrameContext* fr
         return frame->customResolveFormResult;
     }
     
-    // No extension could resolve the token
     return nullptr;
-/*
-    return SLTExtensionTracker::ReadData([&token, frame](const auto& quests, const auto& questsByKey, const auto& questsByQuest) -> RE::TESForm* {
-        bool triedSLT = false;
-        for (auto& quest : quests) {
-            if (quest->priority >= 0)
-                continue;
-            if (!quest->enabled) {
-                logger::info("Skipping key({}) for form resolution", quest->key);
-                continue;
-            }
-            // Extension form resolution using promise/future
-            if (auto optForm = quest->CustomResolveForm(token, frame)) {
-                return optForm.value();
-            }
-        }
-
-        if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
-            return frame->customResolveFormResult;
-        }
-
-        for (auto& quest : quests) {
-            if (quest->priority < 0)
-                continue;
-            if (!quest->enabled) {
-                logger::info("Skipping key({}) for form resolution", quest->key);
-                continue;
-            }
-            // Extension form resolution using promise/future
-            if (auto optForm = quest->CustomResolveForm(token, frame)) {
-                return optForm.value();
-            }
-        }
-
-        if (ContextManager::GetSingleton().ResolveFormVariable(frame, token)) {
-            return frame->customResolveFormResult;
-        }
-        
-        // No extension could resolve the token
-        return nullptr;
-    });
-*/
 }
 
 bool Salty::ParseScript(FrameContext* frame) {
@@ -719,7 +693,7 @@ bool Salty::RunStep(FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& conte
         // Check if it's a label (shouldn't execute)
         std::string labelName = ExtractLabelName(cmdLine->tokens, frame->commandType);
         if (labelName.empty()) {
-            if (TryFunctionLibrary(cmdLine->tokens, frame, contextInfo)) {
+            if (TryFunctionLibrary(cmdLine->tokens, frame, contextInfo.target, contextInfo.ame)) {
                 frame->currentLine++;
                 frame->isReadied = false;
                 return false;

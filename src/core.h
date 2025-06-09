@@ -159,7 +159,57 @@ private:
         return std::fabs(lhs - rhs) < FLT_EPSILON; 
     }
     static bool CompareValues(const std::string& lhs, const std::string& rhs) { 
-        return lhs == rhs; 
+        // Try to parse both as numbers first
+        float lhsFloat, rhsFloat;
+        bool lhsIsFloat = false, rhsIsFloat = false;
+        
+        // Try parsing as floats
+        auto [ptr1, ec1] = std::from_chars(lhs.data(), lhs.data() + lhs.size(), lhsFloat);
+        if (ec1 == std::errc{} && ptr1 == lhs.data() + lhs.size()) {
+            lhsIsFloat = true;
+        }
+        
+        auto [ptr2, ec2] = std::from_chars(rhs.data(), rhs.data() + rhs.size(), rhsFloat);
+        if (ec2 == std::errc{} && ptr2 == rhs.data() + rhs.size()) {
+            rhsIsFloat = true;
+        }
+        
+        // If both parsed as numbers, compare numerically
+        if (lhsIsFloat && rhsIsFloat) {
+            return std::fabs(lhsFloat - rhsFloat) < FLT_EPSILON;
+        }
+        
+        // If only one is a number, try integer parsing for the other
+        if (lhsIsFloat || rhsIsFloat) {
+            std::int32_t lhsInt, rhsInt;
+            bool lhsIsInt = false, rhsIsInt = false;
+            
+            if (!lhsIsFloat) {
+                auto [ptr, ec] = std::from_chars(lhs.data(), lhs.data() + lhs.size(), lhsInt);
+                if (ec == std::errc{} && ptr == lhs.data() + lhs.size()) {
+                    lhsIsInt = true;
+                    lhsFloat = static_cast<float>(lhsInt);
+                    lhsIsFloat = true;
+                }
+            }
+            
+            if (!rhsIsFloat) {
+                auto [ptr, ec] = std::from_chars(rhs.data(), rhs.data() + rhs.size(), rhsInt);
+                if (ec == std::errc{} && ptr == rhs.data() + rhs.size()) {
+                    rhsIsInt = true;
+                    rhsFloat = static_cast<float>(rhsInt);
+                    rhsIsFloat = true;
+                }
+            }
+            
+            // If both are now numeric, compare
+            if (lhsIsFloat && rhsIsFloat) {
+                return std::fabs(lhsFloat - rhsFloat) < FLT_EPSILON;
+            }
+        }
+        
+        // Fall back to string comparison
+        return str::iEquals(lhs, rhs); 
     }
     
     template<typename T, typename U>

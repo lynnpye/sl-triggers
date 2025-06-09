@@ -5,6 +5,7 @@ set(headers ${headers}
 	src/core.h
 	src/coroutines.h
 	src/engine.h
+	src/forge.h
 	src/hooks.h
 	src/modevent.h
 	src/papyrus_conversion.h

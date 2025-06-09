@@ -776,6 +776,7 @@ public:
 
     // transient
     RE::TESForm* customResolveFormResult;
+    bool popAfterStepReturn;
 
     bool isReady;
     bool isReadied;
@@ -803,8 +804,6 @@ public:
 
         return -1;
     }
-
-    void FetchMostRecentResult();
     
 #define FrameLogInfo(frame, fmt, ...) \
     do { \
