@@ -11,6 +11,8 @@ namespace SLT {
 using namespace RE;
 using namespace RE::BSScript;
 
+bool RegisterOptional(RE::BSScript::IVirtualMachine* vm);
+
 /**
  * A simple Optional type for Papyrus that mimics std::optional behavior
  * This implementation uses modern CommonLib APIs to avoid complex hooks
@@ -56,7 +58,7 @@ public:
     explicit Optional(RE::BGSBaseAlias* value) : _value(value) {}
 
     // Core interface
-    bool IsValid() const {
+    bool HasData() const {
         return !std::holds_alternative<std::monostate>(_value);
     }
 

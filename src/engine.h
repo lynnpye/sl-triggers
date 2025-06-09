@@ -27,41 +27,4 @@ struct FunctionLibrary {
     static bool PrecacheLibraries();
 };
 #pragma endregion
-
-#pragma region Salty, the SLTScript Engine
-struct Salty {
-public:
-    Salty() = default;
-
-    static Salty& GetSingleton() {
-        static Salty singleton;
-        return singleton;
-    }
-
-    /**
-     * Salty will call the parser and pass it the FrameContext. When the parser is done,
-     * the FrameContext will have its scriptTokens and co
-     */
-    static bool ParseScript(FrameContext* frame);
-
-    static bool IsStepRunnable(const std::unique_ptr<CommandLine>& step);
-
-    /**
-     * RunStep
-     * Will attempt to run the command pointed to currently by the FrameContext.
-     * Will attempt to increment the currentLine value by 1 if possible afterward.
-     */
-    static bool RunStep(FrameContext* frame, SLTStackAnalyzer::AMEContextInfo& contextInfo);
-
-    static bool AdvanceToNextRunnableStep(FrameContext* frame);
-
-    static RE::TESForm* ResolveFormVariable(std::string_view token, FrameContext* frame);
-
-private:
-    Salty(const Salty&) = delete;
-    Salty& operator=(const Salty&) = delete;
-    Salty(Salty&&) = delete;
-    Salty& operator=(Salty&&) = delete;
-};
-#pragma endregion
 }

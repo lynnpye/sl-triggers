@@ -1,161 +1,12 @@
 #include "contexting.h"
 #include "engine.h"
-#include "questor.h"
 #include "coroutines.h"
 
-#pragma region DumpStack helpers
-namespace {
-using namespace SLT;
-
-void DumpStack(RE::BSScript::Stack* stackPtr, std::string prefix = "");
-void DumpFrame(BSScript::StackFrame* frame, RE::BSScript::Stack* stackPtr, std::string prefix) {
-    logger::info("{}BEGIN DumpFrame", prefix);
-    if (!frame) {
-        logger::info("{}null", prefix);
-    } else {
-        std::string owningScriptName = "OWNING SCRIPT UNAVAILABLE";
-        if (frame->owningObjectType)
-            owningScriptName = frame->owningObjectType->GetName();
-        std::string owningFunctionName = "OWNING FUNCTION UNAVAILABLE";
-        if (frame->owningFunction)
-            owningFunctionName = frame->owningFunction->GetName();
-        BSScript::Variable& selfObj = frame->self;
-        LogVariableInfo(selfObj, "frame dumping");
-        std::string selfObjStr = selfObj.GetType().TypeAsString();
-        logger::info("{}instructionsValid({}) size({}) instructionPointer({}) owningScript({}) owningFunction({}) selfObjStr({})", prefix,
-            frame->instructionsValid, frame->size, frame->instructionPointer, owningScriptName, owningFunctionName, selfObjStr
-            );
-    }
-    logger::info("{}END DumpFrame", prefix);
-    if (frame->previousFrame) {
-        logger::info("{} WAS PRECEDED BY:", prefix);
-        DumpFrame(frame->previousFrame, stackPtr, prefix + " ");
-    } else if (frame->parent && frame->parent != stackPtr) {
-        logger::info("{}\t\tWITH PREVIOUS STACK:::", prefix);
-        DumpStack(frame->parent, prefix + "\t\t");
-    }
-}
-
-void DumpCodeTasklet(BSTSmartPointer<BSScript::Internal::CodeTasklet>& owningTasklet, RE::BSScript::Stack* stackPtr, std::string prefix) {
-    logger::info("{}BEGIN DumpCodeTasklet", prefix);
-    if (!owningTasklet) {
-        logger::info("{}null", prefix);
-    } else {
-        logger::info("{}resumeReason({})", prefix, owningTasklet->resumeReason.underlying());
-    }
-    logger::info("{}END DumpCodeTasklet", prefix);
-    DumpFrame(owningTasklet->topFrame, stackPtr, prefix);
-}
-
-void DumpStack(RE::BSScript::Stack* stackPtr, std::string prefix) {
-    logger::info("\n\n\n\n!!!!!!!!!!!!!!!!!!!!!!");
-    logger::info("{}BEGIN DumpStack", prefix);
-    if (!stackPtr) {
-        logger::info("{}null", prefix);
-    } else {
-        logger::info("{}stackID({}) state({}) freezeState({}) stackType({}) frames({})", prefix,
-            stackPtr->stackID, stackPtr->state.underlying(), stackPtr->freezeState.underlying(), stackPtr->stackType.underlying(), stackPtr->frames
-        );
-    }
-    logger::info("{}END DumpStack", prefix);
-    DumpCodeTasklet(stackPtr->owningTasklet, stackPtr, prefix);
-    logger::info("\n!!!!!!!!!!!!!!!!!!!!!!\n\n\n\n");
-}
-}
-#pragma endregion
 
 namespace SLT {
 using namespace SLT;
 
 #pragma region ScriptPoolManager
-
-class ScriptPoolManager {
-public:
-    static ScriptPoolManager& GetSingleton() {
-        static ScriptPoolManager singleton;
-        return singleton;
-    }
-
-    void InitializePool() {
-        spellPool.clear();
-        mgefPool.clear();
-
-        int highWaterMark = 0;
-        std::string lastSpellId;
-        
-        for (int i = 1; i <= 99; ++i) {
-            std::string spellId = "slt_cmds" + std::to_string(i).insert(0, 2 - std::to_string(i).length(), '0');
-            if (auto spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(spellId)) {
-                spellPool.push_back(spell);
-                highWaterMark = i;
-                lastSpellId = spellId;
-            } else {
-                break;
-            }
-        }
-        
-        for (int i = 1; i <= highWaterMark; ++i) {
-            std::string mgefId = "slt_cmd" + std::to_string(i).insert(0, 2 - std::to_string(i).length(), '0');
-            if (auto mgef = RE::TESForm::LookupByEditorID<RE::EffectSetting>(mgefId)) {
-                mgefPool.push_back(mgef);
-            } else {
-                highWaterMark = i;
-                logger::warn("Failed to find magic effect: [{}]({})\n\
-                    Fewer MGEF records than SPEL records. Using reduced high water mark {} and reducing SPEL pool to match", i, mgefId, highWaterMark);
-                spellPool.resize(highWaterMark);
-                break;
-            }
-        }
-        
-        logger::info("Script pool initialized: {} spells, {} magic effects", 
-                    spellPool.size(), mgefPool.size());
-    }
-
-    RE::EffectSetting* FindAvailableMGEF(RE::Actor* target) {
-        if (!target) return nullptr;
-        
-        auto magicTarget = target->AsMagicTarget();
-        if (!magicTarget) return nullptr;
-        
-        for (auto mgef : mgefPool) {
-            if (!magicTarget->HasMagicEffect(mgef)) {
-                return mgef;
-            }
-        }
-        
-        logger::warn("No available magic effects in pool for target {}", 
-                    target->GetDisplayFullName());
-        return nullptr;
-    }
-    
-    RE::SpellItem* FindSpellForMGEF(RE::EffectSetting* mgef) {
-        if (!mgef) return nullptr;
-        
-        auto it = std::find(mgefPool.begin(), mgefPool.end(), mgef);
-        if (it != mgefPool.end()) {
-            size_t index = std::distance(mgefPool.begin(), it);
-            if (index < spellPool.size()) {
-                return spellPool[index];
-            }
-        }
-        
-        return nullptr;
-    }
-    
-    bool ApplyScript(RE::Actor* target, std::string_view scriptName);
-
-private:
-    std::vector<RE::SpellItem*> spellPool;
-    std::vector<RE::EffectSetting*> mgefPool;
-    
-    ScriptPoolManager() = default;
-    ScriptPoolManager(const ScriptPoolManager&) = delete;
-    ScriptPoolManager& operator=(const ScriptPoolManager&) = delete;
-};
-
-OnDataLoaded([]{
-    ScriptPoolManager::GetSingleton().InitializePool();
-});
 
 bool ScriptPoolManager::ApplyScript(RE::Actor* target, std::string_view scriptName) {
     if (!target) {
@@ -203,17 +54,6 @@ bool ScriptPoolManager::ApplyScript(RE::Actor* target, std::string_view scriptNa
 #pragma endregion
 
 #pragma region SerializationHelper
-/*
-template<typename T>
-bool WriteData(SKSE::SerializationInterface* a_intfc, const T& data) {
-    return a_intfc->WriteRecordData(&data, sizeof(T));
-}
-
-template<typename T>
-bool ReadData(SKSE::SerializationInterface* a_intfc, T& data) {
-    return a_intfc->ReadRecordData(&data, sizeof(T));
-}
-*/
 
 class SerializationHelper {
 public:
@@ -413,14 +253,8 @@ public:
 #pragma endregion
 
 #pragma region ContextManager
-static ContextManager* g_ContextManager = nullptr;
 
 ThreadContextHandle ContextManager::nextContextId = 1;
-
-OnAfterSKSEInit([]{
-    g_ContextManager = &ContextManager::GetSingleton();
-});
-
 
 bool ContextManager::StartSLTScript(RE::Actor* target, std::string_view initialScriptName) {
     if (!target || initialScriptName.empty()) return false;
@@ -452,6 +286,7 @@ bool ContextManager::StartSLTScript(RE::Actor* target, std::string_view initialS
         });
 
         if (handle) {
+            // eventually I would like this to be a) immediately callable like this but also b) scheduled to repeat because failure could have just meant we lacked enough MGEF objects in the pool and should retry soon
             if (ScriptPoolManager::GetSingleton().ApplyScript(target, initialScriptName)) {
                 return true;
             }
@@ -708,8 +543,12 @@ bool ContextManager::HasVar(FrameContext* frame, std::string_view token) const {
 }
 
 // Leave this as is. We will only do custom form resolution
-std::string ContextManager::ResolveValueVariable(FrameContext* frame, std::string_view token) const {
+std::string ContextManager::ResolveValueVariable(ThreadContextHandle threadContextHandle, std::string_view token) const {
     if (token.empty()) return "";
+
+    auto* frame = GetSingleton().GetFrameContext(threadContextHandle);
+
+    if (!frame) return "";
     
     // Most recent result
     if (token == "$$") {
@@ -766,7 +605,8 @@ std::string ContextManager::ResolveValueVariable(FrameContext* frame, std::strin
 }
 
 // Enhanced ResolveFormVariable that mimics the Papyrus _slt_SLTResolveForm logic
-bool ContextManager::ResolveFormVariable(FrameContext* frame, std::string_view token) const {
+bool ContextManager::ResolveFormVariable(ThreadContextHandle threadContextHandle, std::string_view token) const {
+    auto* frame = GetSingleton().GetFrameContext(threadContextHandle);
     if (!frame || token.empty()) return false;
     
     // Handle built-in form tokens first (like _slt_SLTResolveForm)
@@ -808,14 +648,14 @@ bool ContextManager::ResolveFormVariable(FrameContext* frame, std::string_view t
                 case 2: params.push_back(RE::BSFixedString("resolve_partner3")); break;
                 case 3: params.push_back(RE::BSFixedString("resolve_partner4")); break;
             }
-            if (!FormResolver::RunOperationOnActor(frame, frame->thread->target->AsActor(), frame->thread->ame, params)) {
+            if (!OperationRunner::RunOperationOnActor(frame->thread->target->AsActor(), frame->thread->ame, params)) {
                 logger::error("Unable to resolve SexLab partner variable");
             }
         }
     }
     
     // Try direct form lookup for form IDs or editor IDs
-    auto* aForm = FormUtil::Parse::GetForm(ResolveValueVariable(frame, token)); // this may return nullptr but at this point SLT and all the extensions had a crack
+    auto* aForm = FormUtil::Parse::GetForm(ResolveValueVariable(threadContextHandle, token)); // this may return nullptr but at this point SLT and all the extensions had a crack
     if (aForm) {
         frame->customResolveFormResult = aForm;
         return true;
@@ -849,19 +689,6 @@ void ContextManager::CleanupContext(ThreadContextHandle contextId) {
             activeContexts.erase(activeIt);
         }
         return nullptr;
-    });
-}
-
-std::string ContextManager::DumpState() {
-    return ReadData([](const auto& targetContexts, const auto& activeContexts, const auto& globalVars, auto nextId) -> std::string {
-        std::ostringstream oss;
-        oss << std::endl << "=== Contexting DumpState Start ===" << std::endl;
-        oss << std::format("ContextManager: targetContexts.size({}) activeContexts.size({}) globalVars.size({}) nextId({})", targetContexts.size(), activeContexts.size(), globalVars.size(), nextId) << std::endl;
-        for (auto& it : targetContexts) {
-            oss << it.second->DumpState() << std::endl;
-        }
-        oss << std::endl << "=== Contexting DumpState End ===" << std::endl;
-        return oss.str();
     });
 }
 
@@ -926,15 +753,6 @@ bool TargetContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     return true;
 }
 
-std::string TargetContext::DumpState() {
-    std::ostringstream oss;
-    oss << std::format("\tTargetContext: tesTargetFormID({}) threads.size({}) targetVars.size({})", tesTargetFormID, threads.size(), targetVars.size()) << std::endl;
-    for (auto& it : threads) {
-        oss << it->DumpState() << std::endl;
-    }
-    return oss.str();
-}
-
 #pragma endregion
 
 #pragma region ThreadContext
@@ -963,14 +781,14 @@ bool ThreadContext::PopFrameContext() {
             return false;
         
         auto* previousFrame = callStack.back().get();
-        while (previousFrame && !previousFrame->IsReady()) {
+        while (previousFrame && (previousFrame->currentLine >= previousFrame->scriptTokens.size())) {
             callStack.pop_back();
             if (callStack.size() < 1)
                 return false;
             previousFrame = callStack.back().get();
         }
         
-        return previousFrame && previousFrame->IsReady();
+        return (previousFrame && (previousFrame->currentLine < previousFrame->scriptTokens.size()));
     } catch (...) {
         return false;
     }
@@ -1028,39 +846,6 @@ bool ThreadContext::Deserialize(SKSE::SerializationInterface* a_intfc, TargetCon
     return true;
 }
 
-bool ThreadContext::ExecuteNextStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
-    if (callStack.empty())
-        return false;
-
-    FrameContext* currentFrame = callStack.back().get();
-    while (currentFrame && !currentFrame->IsReady()) {
-        callStack.pop_back();
-        if (callStack.size() > 0)
-            currentFrame = callStack.back().get();
-        else
-            currentFrame = nullptr;
-    }
-    
-    if (currentFrame && currentFrame->IsReady()) {
-        bool frameRunStepResult = currentFrame->RunStep(contextInfo);
-        if (currentFrame->popAfterStepReturn) {
-            currentFrame->popAfterStepReturn = false;
-            return PopFrameContext();
-        }
-        return frameRunStepResult;
-    }
-    
-    return false;
-}
-
-std::string ThreadContext::DumpState() {
-    std::ostringstream oss;
-    oss << std::format("\t\tThreadContext: threadContextHandle({}) initialScriptName({}) callStack.size({}) threadVars.size({})", threadContextHandle, initialScriptName, callStack.size(), threadVars.size()) << std::endl;
-    for(auto& it : callStack) {
-        oss << it->DumpState() << std::endl;
-    }
-    return oss.str();
-}
 
 #pragma endregion
 
@@ -1195,425 +980,13 @@ bool FrameContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
 }
 
 bool FrameContext::ParseScript() {
-    bool result = Salty::GetSingleton().ParseScript(this);
+    bool result = ParseResult::Success == Parser::ParseScript(this);
     if (!result) {
         FrameLogError(this, "Failed to parse script '{}': error code {}", scriptName, static_cast<int>(result));
         return false;
     }
-    return IsReady();
-}
-
-bool FrameContext::IsReady() {
-    if (isReadied) {
-        return isReady;
-    }
-
-    return Salty::AdvanceToNextRunnableStep(this);
-}
-
-bool FrameContext::RunStep(SLTStackAnalyzer::AMEContextInfo& contextInfo) {
-    auto& manager = ContextManager::GetSingleton();
-    const int MAX_BATCHED_STEPS = 100;  // Reduced for coroutine compatibility
-    //const int TIME_CHECK_INTERVAL = 10; // Check time more frequently
-    int stepCount = 0;
-    
-    // Check if execution is paused
-    if (!manager.ShouldContinueExecution()) {
-        FrameLogInfo(this, "Execution paused, yielding control");
-        return IsReady(); // Don't execute, but preserve ready state
-    }
-    
-    //auto startTime = std::chrono::high_resolution_clock::now();
-    //const auto maxFrameTime = std::chrono::microseconds(200); // Shorter budget for coroutines
-    
-    while (stepCount < MAX_BATCHED_STEPS) {
-        // Check for pause every few steps
-        if (stepCount % 5 == 0 && !manager.ShouldContinueExecution()) {
-            FrameLogInfo(this, "Execution paused mid-batch after {} steps", stepCount);
-            break;
-        }
-        
-        /*bool wasInternal =*/ Salty::RunStep(this, contextInfo);
-        
-        // handle some cases
-        // is current frame at end?
-        if (this->currentLine >= this->scriptTokens.size()) {
-            // we should pop and leave
-            this->popAfterStepReturn = true;
-            return true; //this->thread->PopFrameContext();
-        }
-
-        if (this != this->thread->callStack.back().get()) {
-            return true;
-        }
-        stepCount++;
-        /*
-        if (!wasInternal) {
-            // External/extension function was called - yield to allow coroutines to process
-            FrameLogDebug(this, "External function called, yielding after {} steps", stepCount);
-            break;
-        }
-        */
-        if (!IsReady()) break;
-        
-        // Check time more frequently for coroutine responsiveness
-        /*
-        if (stepCount % TIME_CHECK_INTERVAL == 0) {
-            auto elapsed = std::chrono::high_resolution_clock::now() - startTime;
-            if (elapsed > maxFrameTime) {
-                FrameLogDebug(this, "Frame time budget exceeded after {} steps", stepCount);
-                break;
-            }
-        }
-        */
-    }
-    
-    if (stepCount >= MAX_BATCHED_STEPS) {
-        FrameLogWarn(this, "Hit maximum batched steps limit, yielding control");
-    }
-    
-    return IsReady();
-}
-
-std::string FrameContext::DumpState() {
-    std::ostringstream oss;
-    oss << std::format("\t\t\tFrameContext: scriptName({}) currentLine({}) localVars.size({})", scriptName, currentLine, localVars.size()) << std::endl;
-    return oss.str();
+    return currentLine < scriptTokens.size();
 }
 
 #pragma endregion
-
-
-#pragma region SLTStackAnalyzer definition
-
-void SLTStackAnalyzer::Walk(RE::VMStackID stackId) {
-    
-    // Validate stackId first
-    if (stackId == 0 || stackId == static_cast<RE::VMStackID>(-1)) {
-        logger::warn("Invalid stackId: 0x{:X}", stackId);
-        return;
-    }
-    
-    using RE::BSScript::Internal::VirtualMachine;
-    using RE::BSScript::Stack;
-    using RE::BSScript::Internal::CodeTasklet;
-    using RE::BSScript::StackFrame;
-    
-    auto* vm = VirtualMachine::GetSingleton();
-    if (!vm) {
-        logger::warn("Failed to get VM singleton");
-        return;
-    }
-    
-    RE::BSScript::Stack* stackPtr = nullptr;
-    
-    try {
-        bool success = vm->GetStackByID(stackId, &stackPtr);
-        
-        if (!success) {
-            logger::warn("GetStackByID returned false for ID: 0x{:X}", stackId);
-            return;
-        }
-        
-        if (!stackPtr) {
-            logger::warn("GetStackByID succeeded but returned null pointer for ID: 0x{:X}", stackId);
-            return;
-        }
-        DumpStack(stackPtr);
-    } catch (const std::exception& e) {
-        logger::error("Exception in GetStackByID: {}", e.what());
-        return;
-    } catch (...) {
-        logger::error("Unknown exception in GetStackByID for stackId: 0x{:X}", stackId);
-        return;
-    }
 }
-
-SLTStackAnalyzer::AMEContextInfo SLTStackAnalyzer::GetAMEContextInfo(RE::VMStackID stackId) {
-    SLTStackAnalyzer::AMEContextInfo result;
-    
-    // Validate stackId first
-    if (stackId == 0 || stackId == static_cast<RE::VMStackID>(-1)) {
-        logger::warn("Invalid stackId: 0x{:X}", stackId);
-        return result;
-    }
-    
-    using RE::BSScript::Internal::VirtualMachine;
-    using RE::BSScript::Stack;
-    using RE::BSScript::Internal::CodeTasklet;
-    using RE::BSScript::StackFrame;
-    
-    auto* vm = VirtualMachine::GetSingleton();
-    if (!vm) {
-        logger::warn("Failed to get VM singleton");
-        return result;
-    }
-    auto* handlePolicy = vm->GetObjectHandlePolicy();
-    if (!handlePolicy) {
-        logger::error("Unable to get handle policy");
-        return result;
-    }
-    
-    RE::BSScript::Stack* stackPtr = nullptr;
-    
-    try {
-        bool success = vm->GetStackByID(stackId, &stackPtr);
-        
-        if (!success) {
-            logger::warn("GetStackByID returned false for ID: 0x{:X}", stackId);
-            return result;
-        }
-        
-        if (!stackPtr) {
-            logger::warn("GetStackByID succeeded but returned null pointer for ID: 0x{:X}", stackId);
-            return result;
-        }
-    } catch (const std::exception& e) {
-        logger::error("Exception in GetStackByID: {}", e.what());
-        return result;
-    } catch (...) {
-        logger::error("Unknown exception in GetStackByID for stackId: 0x{:X}", stackId);
-        return result;
-    }
-    
-    if (!stackPtr->owningTasklet) {
-        logger::warn("Stack has no owning tasklet for ID: 0x{:X}", stackId);
-        return result;
-    }
-    
-    auto taskletPtr = stackPtr->owningTasklet;
-    
-    if (!taskletPtr->topFrame) {
-        logger::warn("Tasklet has no top frame for stack ID: 0x{:X}", stackId);
-        return result;
-    }
-
-    RE::BSFixedString propNameThreadContextHandle("threadContextHandle");
-    RE::BSFixedString propNameInitialScriptName("initialScriptName");
-    RE::BSFixedString sl_triggersCmdScriptName("sl_triggersCmd");
-    
-    // Helper function to check if a script object is an sl_TriggersCmd AME
-    auto IsValidSLTAME = [&](RE::BSScript::Object* obj) -> bool {
-        if (!obj) {
-            logger::info("IsValidSLTAME: !obj");
-            return false;
-        }
-        auto* typeInfo = obj->GetTypeInfo();
-        if (!typeInfo) {
-            logger::info("IsValidSLTAME: !typeInfo");
-            return false;
-        }
-        RE::BSFixedString typeName(typeInfo->GetName());
-        if (typeName != sl_triggersCmdScriptName) {
-            logger::info("IsValidSLTAME: typeName({}) != cmdscriptname({})", typeName.c_str(), sl_triggersCmdScriptName.c_str());
-            return false;
-        }
-        return typeName == sl_triggersCmdScriptName;
-    };
-    
-    // Helper function to check if a script object is an sl_TriggersCmd AME
-    auto IsValidSLTAMEForThreadHandle = [&](RE::BSScript::Object* obj, ThreadContextHandle contextHandle) -> bool {
-        if (!obj) return false;
-        auto* typeInfo = obj->GetTypeInfo();
-        if (!typeInfo) return false;
-        RE::BSFixedString typeName(typeInfo->GetName());
-        if (typeName == sl_triggersCmdScriptName) return false;
-        RE::BSScript::Variable* propThreadContextHandle = obj->GetProperty(propNameThreadContextHandle);
-        ThreadContextHandle cid = 0;
-        if (propThreadContextHandle && propThreadContextHandle->IsInt()) {
-            cid = propThreadContextHandle->GetSInt();
-            if (!cid) return false;
-        }
-        return contextHandle == cid;
-    };
-
-    auto IsValidSLTAE = [&IsValidSLTAMEForThreadHandle](RE::ActiveEffect* ame, ThreadContextHandle contextHandle) -> bool {
-        if (!ame) return false;
-        auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-        if (!vm) return false;
-        auto* handlePolicy = vm->GetObjectHandlePolicy();
-        if (!handlePolicy) return false;
-        auto handle = handlePolicy->GetHandleForObject(RE::ActiveEffect::VMTYPEID, ame);
-        if (!handle) return false;
-        auto* bindPolicy = vm->GetObjectBindPolicy();
-        if (!bindPolicy) return false;
-        RE::BSTSmartPointer<RE::BSScript::Object> obj;
-        bindPolicy->BindObject(obj, handle);
-        if (!obj) return false;
-        return IsValidSLTAMEForThreadHandle(obj.get(), contextHandle);
-    };
-    
-    // Helper function to extract context info from a script object
-    auto ExtractContextFromObject = [&](RE::BSScript::Object* selfObject) -> std::optional<SLTStackAnalyzer::AMEContextInfo> {
-        if (!IsValidSLTAME(selfObject)) {
-            return std::nullopt;
-        }
-        
-        SLTStackAnalyzer::AMEContextInfo localResult;
-        
-        // Try to get threadContextHandle first
-        RE::BSScript::Variable* propThreadContextHandle = selfObject->GetProperty(propNameThreadContextHandle);
-        
-        ThreadContextHandle cid = 0;
-        if (propThreadContextHandle && propThreadContextHandle->IsInt()) {
-            cid = propThreadContextHandle->GetSInt();
-        }
-        
-        // If we have a valid threadContextHandle, use it directly
-        if (cid != 0) {
-            auto& contextManager = ContextManager::GetSingleton();
-            auto threadContext = contextManager.GetContext(cid);
-            // activeContexts still not properly populated
-            if (threadContext && threadContext->target) {
-                // localResult.ame
-                localResult.frame = contextManager.GetFrameContext(cid);
-                localResult.handle = cid;
-                localResult.initialScriptName = threadContext->initialScriptName;
-                localResult.isValid = true;
-                localResult.stackId = stackId;
-                localResult.target = threadContext->target->AsActor();
-                
-                // Try to get the AME - attempt multiple approaches
-                RE::VMHandle objHandle = selfObject->GetHandle();
-                
-                // First, try the standard approach
-                if (handlePolicy->IsHandleObjectAvailable(objHandle)) {
-                    auto* ameRawPtr = handlePolicy->GetObjectForHandle(RE::ActiveEffect::VMTYPEID, selfObject->GetHandle());
-                    if (!ameRawPtr) {
-                        logger::debug("GetObjectForHandle return null AME ptr");
-                    }
-                    else {
-                        RE::ActiveEffect* ame = static_cast<RE::ActiveEffect*>(ameRawPtr);
-                        if (!ame) {
-                            logger::error("Unable to cast to correct AME");
-                        }
-                        else {
-                            localResult.ame = ame;
-                        }
-                    }
-                } else {
-                    logger::debug("handlePolicy->IsHandleObjectAvailable returned false");
-                }
-                
-                // If that failed, try to get it from the target's active effects
-                if (!localResult.ame) {
-                    if (localResult.target) {
-                        auto* magicTarget = localResult.target->AsMagicTarget();
-                        if (magicTarget) {
-
-                            // my C++ is ancient and was, frankly, sparse (i.e. beginner level before I moved on)
-                            // and I cannot even begin to tell you how weird this feels
-                            class MyEffectVisitor : public RE::MagicTarget::ForEachActiveEffectVisitor {
-                            private:
-                                std::function<bool(RE::ActiveEffect*, ThreadContextHandle)> IsValidSLTAE;
-                                ThreadContextHandle handle;
-                                RE::ActiveEffect* result;
-                            public:
-                                explicit MyEffectVisitor(std::function<bool(RE::ActiveEffect*, ThreadContextHandle)> callback, ThreadContextHandle handle)
-                                    : IsValidSLTAE(callback), result(nullptr) {}
-
-                                RE::BSContainer::ForEachResult Accept(RE::ActiveEffect* effect) override {
-                                    if (effect && IsValidSLTAE(effect, handle)) {
-                                        result = effect;
-                                        return BSContainer::ForEachResult::kStop;
-                                    }
-                                    return RE::BSContainer::ForEachResult::kContinue;
-                                }
-
-                                RE::ActiveEffect* GetResult() const {
-                                    return result;
-                                }
-                            };
-
-                            MyEffectVisitor visitor(IsValidSLTAE, cid);
-                            magicTarget->VisitEffects(visitor);
-                            localResult.ame = visitor.GetResult();
-                        }
-                        else {
-                            logger::debug("Unable to retrieve valid magicTarget");
-                        }
-                    }
-                    else {
-                        logger::debug("We have no AME and, mysteriously, no Actor");
-                    }
-                }
-                
-                // Get initial script name if available
-                RE::BSScript::Variable* propInitialScriptName = selfObject->GetProperty(propNameInitialScriptName);
-                if (propInitialScriptName && propInitialScriptName->IsString()) {
-                    localResult.initialScriptName = propInitialScriptName->GetString();
-                }
-                
-                return localResult;
-            } else {
-                if (!threadContext)
-                    logger::debug("Unable to find a thread context");
-                else if (!threadContext->target) 
-                    logger::debug("Unable to find a thread context with valid target");
-            }
-        } else {
-            logger::debug("ExtractContextFromObject: end, could not obtain threadContextHandle");
-        }
-        
-        return std::nullopt;
-    };
-    
-    // Walk backwards through the stack frames looking for an sl_TriggersCmd AME
-    auto* currentFrame = taskletPtr->topFrame;
-    int frameDepth = 0;
-    const int MAX_FRAME_DEPTH = 10; // Prevent infinite loops
-    
-    while (currentFrame && frameDepth < MAX_FRAME_DEPTH) {
-        // Check if this frame has a valid sl_TriggersCmd object
-        RE::BSScript::Variable& self = currentFrame->self;
-        if (self.IsObject()) {
-            auto selfObject = self.GetObject();
-            if (selfObject) {
-                auto* typeInfo = selfObject->GetTypeInfo();
-                std::string typeName = "<unknown or irretrievable>";
-                if (typeInfo)
-                    typeName = typeInfo->GetName();
-                auto contextInfo = ExtractContextFromObject(selfObject.get());
-                if (contextInfo.has_value()) {
-                    return contextInfo.value();
-                } else {
-                    logger::debug("Unable to extract context from object");
-                }
-            }
-        }
-        
-        // Move to the previous frame
-        currentFrame = currentFrame->previousFrame;
-        frameDepth++;
-    }
-    
-    if (frameDepth >= MAX_FRAME_DEPTH) {
-        logger::warn("Reached maximum frame depth while searching for AME context");
-    }
-    
-    // If we didn't find anything in the main stack, try the parent stack
-    if (!currentFrame && taskletPtr->topFrame && taskletPtr->topFrame->parent && 
-        taskletPtr->topFrame->parent != stackPtr) {
-        // Note: This is a simplified approach - in a full implementation, 
-        // you might want to recursively search parent stacks
-        auto* parentStack = taskletPtr->topFrame->parent;
-        if (parentStack && parentStack->owningTasklet && parentStack->owningTasklet->topFrame) {
-            auto* parentFrame = parentStack->owningTasklet->topFrame;
-            RE::BSScript::Variable& parentSelf = parentFrame->self;
-            if (parentSelf.IsObject()) {
-                auto parentSelfObject = parentSelf.GetObject();
-                if (parentSelfObject) {
-                    auto contextInfo = ExtractContextFromObject(parentSelfObject.get());
-                    if (contextInfo.has_value()) {
-                        return contextInfo.value();
-                    }
-                }
-            }
-        }
-    }
-    
-    logger::warn("Could not find valid sl_TriggersCmd AME context in any stack frame for stackId 0x{:X}", stackId);
-    return result; // Return invalid result
-}
-}
-#pragma endregion

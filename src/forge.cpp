@@ -61,9 +61,9 @@ std::uint32_t CreateAlias(RE::StaticFunctionTag*, RE::BGSBaseAlias* value) {
 }
 
 // Query functions
-bool IsValid(RE::StaticFunctionTag*, std::uint32_t handle) {
+bool HasData(RE::StaticFunctionTag*, std::uint32_t handle) {
     auto* optional = OptionalManager::GetOptional(handle);
-    return optional ? optional->IsValid() : false;
+    return optional ? optional->HasData() : false;
 }
 
 std::uint32_t GetType(RE::StaticFunctionTag*, std::uint32_t handle) {
@@ -235,7 +235,7 @@ bool RegisterOptional(RE::BSScript::IVirtualMachine* vm) {
     vm->RegisterFunction("CreateAlias", Optional::SCRIPT_NAME, CreateAlias);
 
     // Register query functions
-    vm->RegisterFunction("IsValid", Optional::SCRIPT_NAME, IsValid);
+    vm->RegisterFunction("HasData", Optional::SCRIPT_NAME, HasData);
     vm->RegisterFunction("GetType", Optional::SCRIPT_NAME, GetType);
     vm->RegisterFunction("IsBool", Optional::SCRIPT_NAME, IsBool);
     vm->RegisterFunction("IsInt", Optional::SCRIPT_NAME, IsInt);
@@ -288,21 +288,6 @@ void OnOptionalRevert(SKSE::SerializationInterface* intfc) {
     // Clear all optionals on revert
     OptionalManager::Clear();
 }
-
-OnDataLoaded([]{
-    auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-    if (!RegisterOptional(vm)) {
-        logger::error("Failed to successfully RegisterOptional");
-    }
-});
-
-OnNewGame([]{
-    SLT::OptionalManager::Clear();
-});
-
-OnPostLoadGame([]{
-    SLT::OptionalManager::Clear();
-});
 
 
 } // namespace SLT

@@ -1,102 +1,103 @@
-#include "hooks.h"
+#include "skse_events.h"
+#include "forge.h"
+#include "engine.h"
+#include "contexting.h"
+#include "sl_triggers.h"
 
-#include <spdlog/sinks/basic_file_sink.h>
+namespace SLT {
+    static ContextManager* g_ContextManager = nullptr;
 
-std::function<void(SKSE::MessagingInterface::Message*)> SLT::RegistrationClass::_msgHandler = nullptr;
+// Registration helper macro
+#define REGISTER_PAPYRUS_PROVIDER(ProviderClass, ClassName) \
+{ \
+    ::SKSE::GetPapyrusInterface()->Register([](::RE::BSScript::Internal::VirtualMachine* vm) { \
+        static ProviderClass provider; \
+        provider.RegisterFunctions(vm, ClassName); \
+        return true; \
+    }); \
+};
 
-void SLT::RegistrationClass::QuitGameHook::hook() {
-    {
-        auto& reg = SLT::RegistrationClass::GetSingleton();
-        std::lock_guard<std::mutex> lock(reg._mutexQuitters);
-        for (auto& cb : reg._quitters) {
-            cb();
-        }
-    }
-    orig();
-}
+    void GameEventHandler::onLoad() {
+        g_ContextManager = &ContextManager::GetSingleton();
+        fs::path debugmsg_log = GetPluginPath() / "debugmsg.log";
+        std::ofstream file(debugmsg_log, std::ios::trunc);
 
-void SLT::RegistrationClass::QuitGameHook::install() {
-    Hooking::writeCall<SLT::RegistrationClass::QuitGameHook>();
-}
-
-std::string SLT::RegistrationClass::QuitGameHook::logName = "QuitGame";
-REL::Relocation<decltype(SLT::RegistrationClass::QuitGameHook::hook)> SLT::RegistrationClass::QuitGameHook::orig;
-REL::RelocationID SLT::RegistrationClass::QuitGameHook::srcFunc = REL::RelocationID{35545, 36544};
-uint64_t SLT::RegistrationClass::QuitGameHook::srcFuncOffset = REL::Relocate(0x35, 0x1AE);
-
-bool SLT::RegistrationClass::Init(const SKSE::LoadInterface *skse, std::function<void(SKSE::MessagingInterface::Message*)> msgHandler) {
-    if (msgHandler) {
-        _msgHandler = std::move(msgHandler);
+        // Register the provider
+        REGISTER_PAPYRUS_PROVIDER(SLTPapyrusFunctionProvider, "sl_triggers");
+        REGISTER_PAPYRUS_PROVIDER(SLTInternalPapyrusFunctionProvider, "sl_triggers_internal");
     }
 
-    auto logsFolder = SKSE::log::log_directory();
-    if (!logsFolder) SKSE::stl::report_and_fail("SKSE log_directory not provided, logs disabled.");
-    auto pluginName = SKSE::PluginDeclaration::GetSingleton()->GetName();
-    auto logFilePath = *logsFolder / std::format("{}.log", pluginName);
-    auto fileLoggerPtr = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logFilePath.string(), true);
-    auto loggerPtr = std::make_shared<spdlog::logger>("log", std::move(fileLoggerPtr));
-    spdlog::set_default_logger(std::move(loggerPtr));
-    spdlog::set_level(spdlog::level::trace);
-    spdlog::flush_on(spdlog::level::trace);
+    void GameEventHandler::onPostLoad() {
+        //logger::info("onPostLoad()");
+    }
 
-    SKSE::Init(skse);
+    void GameEventHandler::onPostPostLoad() {
+        //logger::info("onPostPostLoad()");
+    }
 
-    ::SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* msg) {
-        auto& reg = SLT::RegistrationClass::GetSingleton();
-        std::vector<std::function<void()>> toCall;
-        {
-            std::lock_guard<std::mutex> lock(reg._mutex);
-            auto it = reg._callbacks.find(msg->type);
-            if (it != reg._callbacks.end())
-                toCall = it->second; // Safe copy
+    void GameEventHandler::onInputLoaded() {
+        //logger::info("onInputLoaded()");
+    }
+
+    void GameEventHandler::onDataLoaded() {
+        FunctionLibrary::PrecacheLibraries();
+        ScriptPoolManager::GetSingleton().InitializePool();
+        auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
+        if (!RegisterOptional(vm)) {
+            logger::error("Failed to successfully RegisterOptional");
         }
-        for (auto& cb : toCall)
-            cb();
-
-        if (SLT::RegistrationClass::_msgHandler) {
-            SLT::RegistrationClass::_msgHandler(msg);
-        }
-    });
- 
-    {
-        auto& reg = SLT::RegistrationClass::GetSingleton();
-        std::lock_guard<std::mutex> lock(reg._mutexInitters);
-        for (auto& cb : reg._initters) {
-            cb();
+        
+        // Register serialization callbacks
+        auto* serialization = SKSE::GetSerializationInterface();
+        if (serialization) {
+            serialization->SetSaveCallback([](SKSE::SerializationInterface* intfc) {
+                if (intfc->OpenRecord('SLTR', 1)) {
+                    OnOptionalSave(intfc);
+                    ContextManager::GetSingleton().Serialize(intfc);
+                }
+            });
+            
+            serialization->SetLoadCallback([](SKSE::SerializationInterface* intfc) {
+                std::uint32_t type, version, length;
+                while (intfc->GetNextRecordInfo(type, version, length)) {
+                    if (type == 'SLTR' && version == 1) {
+                        OnOptionalLoad(intfc);
+                        ContextManager::GetSingleton().Deserialize(intfc);
+                    }
+                }
+            });
+            
+            serialization->SetRevertCallback([](SKSE::SerializationInterface* intfc) {
+                // Clear all contexts on new game
+                OnOptionalRevert(intfc);
+                ContextManager::GetSingleton().CleanupAllContexts();
+            });
         }
     }
 
-    return true;
-}
+    void GameEventHandler::onNewGame() {
+        SLT::GenerateNewSessionId(true);
+        logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::GetSessionId());
+        SLT::OptionalManager::Clear();
+    }
 
-SLT::RegistrationClass& SLT::RegistrationClass::GetSingleton() {
-    static SLT::RegistrationClass instance;
-    return instance;
-}
+    void GameEventHandler::onPreLoadGame() {
+        //logger::info("onPreLoadGame()");
+    }
 
-void SLT::RegistrationClass::RegisterMessageListener(SKSEMessageType skseMessageType, std::function<void()> cb) {
-    std::lock_guard<std::mutex> lock(_mutex);
-    _callbacks[skseMessageType].push_back(std::move(cb));
-}
+    void GameEventHandler::onPostLoadGame() {
+        SLT::GenerateNewSessionId(true);
+        logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::GetSessionId());
+        SLT::OptionalManager::Clear();
+    }
 
-SLT::RegistrationClass::AutoRegister::AutoRegister(SKSEMessageType skseMsg, std::function<void()> cb) {
-    SLT::RegistrationClass::GetSingleton().RegisterMessageListener(skseMsg, cb);
-}
+    void GameEventHandler::onSaveGame() {
+        //logger::info("onSaveGame()");
+    }
 
-void SLT::RegistrationClass::RegisterInitter(std::function<void()> cb) {
-    std::lock_guard<std::mutex> lock(_mutexInitters);
-    _initters.push_back(std::move(cb));
-}
+    void GameEventHandler::onDeleteGame() {
+        //logger::info("onDeleteGame()");
+    }
+}  // namespace plugin
 
-SLT::RegistrationClass::AutoInitter::AutoInitter(std::function<void()> cb) {
-    SLT::RegistrationClass::GetSingleton().RegisterInitter(cb);
-}
 
-void SLT::RegistrationClass::RegisterQuitter(std::function<void()> cb) {
-    std::lock_guard<std::mutex> lock(_mutexQuitters);
-    _quitters.push_back(std::move(cb));
-}
-
-SLT::RegistrationClass::AutoQuitter::AutoQuitter(std::function<void()> cb) {
-    SLT::RegistrationClass::GetSingleton().RegisterQuitter(cb);
-}

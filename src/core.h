@@ -1,18 +1,10 @@
 #pragma once
 
-#include <charconv>
-#include <cmath>
-#include <filesystem>
-#include <string>
-#include <variant>
-
 #include "util.h"
-
-namespace fs = std::filesystem;
 
 namespace SLT {
 
-    
+#pragma region LoggerGuard
 // RAII Logger Guard - logs on construction and destruction
 class LoggerGuard {
 private:
@@ -39,7 +31,9 @@ public:
 // Macro for convenience (optional)
 #define LOG_FUNCTION_SCOPE(func_name) LoggerGuard _log_guard(func_name)
 #define LOG_FUNCTION_SCOPE_CUSTOM(func_name, entry, exit) LoggerGuard _log_guard(func_name, entry, exit)
+#pragma endregion
 
+#pragma region Random type declarations
 enum ScriptType {
     INVALID = 0,
 
@@ -56,28 +50,16 @@ typedef std::int32_t ThreadContextHandle;
 
 extern const std::string_view BASE_QUEST;
 extern const std::string_view BASE_AME;
-    
+#pragma endregion
+
+#pragma region Random function declarations
 fs::path GetPluginPath();
 SLTSessionId GenerateNewSessionId(bool force = false);
 SLTSessionId GetSessionId();
-
-using SLTValue = std::variant<
-    std::monostate,    // null/none
-    bool,
-    std::int32_t,
-    float,
-    std::string
->;
+#pragma endregion
 
 #pragma region SmartComparator
 class SmartComparator {
-public:
-    static bool SmartEquals(const SLTValue& a, const SLTValue& b) {
-        return std::visit([](const auto& lhs, const auto& rhs) -> bool {
-            return CompareValues(lhs, rhs);
-        }, a, b);
-    }
-
 private:
     template<typename T>
     static bool IsTruthy(const T& value) {
@@ -92,38 +74,6 @@ private:
         } else {
             return true; // Unknown types default to truthy
         }
-    }
-
-    static SLTValue ParseValue(std::string_view str) {
-        if (str.empty()) return std::monostate{};
-        
-        // Try bool first - DO NOT ATTEMPT TO CONVERT ANYTHING BUT THE CASE-INSENSITIVE STRINGS "TRUE"/"FALSE"
-        // this is a parsing block, not comparison. we are not coercing types here
-        if (Util::String::isFalse(str)) return false;
-        if (Util::String::isTrue(str)) return true;
-        
-        // Try integer
-        std::int32_t intVal;
-        auto [ptr, ec] = std::from_chars(str.data(), str.data() + str.size(), intVal);
-        if (ec == std::errc{} && ptr == str.data() + str.size()) {
-            return intVal;
-        }
-        
-        // Try float
-        float floatVal;
-        auto [ptr2, ec2] = std::from_chars(str.data(), str.data() + str.size(), floatVal);
-        if (ec2 == std::errc{} && ptr2 == str.data() + str.size()) {
-            return floatVal;
-        }
-        
-        // Try form ID (hex format like 0x12345678)
-        auto hexi = Util::String::StringToIntWithImplicitHexConversion(str, true);
-        if (hexi.has_value()) {
-            return hexi.value();
-        }
-        
-        // Default to string
-        return std::string(str);
     }
     
     template<typename T, typename U>

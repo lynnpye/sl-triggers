@@ -6,7 +6,9 @@ using namespace std::literals;
 #include <filesystem>
 namespace fs = std::filesystem;
 
+#include <charconv>
 #include <chrono>
+#include <cmath>
 #include <coroutine>
 #include <cstdint>
 #include <format>
@@ -18,8 +20,10 @@ namespace fs = std::filesystem;
 #include <shared_mutex>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <nlohmann/json.hpp>

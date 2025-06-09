@@ -81,13 +81,3 @@ namespace SLT {
         }
     }
 }
-
-// Registration helper macro
-#define REGISTER_PAPYRUS_PROVIDER(ProviderClass, ClassName) \
-    OnAfterSKSEInit([]{ \
-        ::SKSE::GetPapyrusInterface()->Register([](::RE::BSScript::Internal::VirtualMachine* vm) { \
-            static ProviderClass provider; \
-            provider.RegisterFunctions(vm, ClassName); \
-            return true; \
-        }); \
-    });

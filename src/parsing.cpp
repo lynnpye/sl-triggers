@@ -43,6 +43,65 @@ namespace {
 
 #pragma region Parser Implementation
 
+namespace {
+    // Label extraction
+    std::string ExtractLabelName(const std::vector<std::string>& tokens, ScriptType scriptType) {
+        if (tokens.empty()) {
+            return "";
+        }
+        
+        if (scriptType == ScriptType::INI) {
+            // INI format: [labelname]
+            if (tokens.size() == 1) {
+                const std::string& token = tokens[0];
+                if (token.length() > 2 && token.front() == '[' && token.back() == ']') {
+                    return token.substr(1, token.length() - 2);
+                }
+            }
+        } else if (scriptType == ScriptType::JSON) {
+            // JSON format: [":", "labelname"] (already normalized by parser)
+            if (tokens.size() >= 2 && tokens[0] == ":") {
+                return tokens[1];
+            }
+        }
+        
+        return "";
+    }
+
+    // Build label maps for goto/gosub
+    void BuildLabelMaps(FrameContext* frame) {
+        if (!frame || frame->scriptTokens.empty()) {
+            return;
+        }
+        
+        frame->gotoLabelMap.clear();
+        frame->gosubLabelMap.clear();
+        
+        for (size_t i = 0; i < frame->scriptTokens.size(); ++i) {
+            const auto& cmdLine = frame->scriptTokens[i];
+            if (!cmdLine || cmdLine->tokens.empty()) {
+                continue;
+            }
+            
+            // GOTO labels: [LABELNAME] style
+            std::string labelName = ExtractLabelName(cmdLine->tokens, frame->commandType);
+            if (!labelName.empty()) {
+                frame->gotoLabelMap[labelName] = i;
+            }
+            
+            // GOSUB labels: "beginsub LABELNAME" style  
+            if (cmdLine->tokens.size() >= 2 && 
+                str::iEquals(cmdLine->tokens[0], "beginsub")) {
+                std::string subName = cmdLine->tokens[1];
+                if (!subName.empty()) {
+                    logger::debug("gosub label added [{}]({})", subName, i);
+                    frame->gosubLabelMap[subName] = i; // Point to the beginsub line
+                }
+            }
+        }
+    }
+}
+
 ParseResult Parser::ParseScript(FrameContext* frame) {
     if (!frame) {
         logger::error("ParseScript: FrameContext cannot be null");
@@ -84,6 +143,8 @@ ParseResult Parser::ParseScript(FrameContext* frame) {
     frame->currentLine = 0;
     frame->isReady = false;
     frame->isReadied = false;
+
+    BuildLabelMaps(frame);
     
     return ParseResult::Success;
 }
