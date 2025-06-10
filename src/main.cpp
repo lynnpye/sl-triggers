@@ -1,4 +1,3 @@
-#include "skse_events.h"
 
 SKSEPluginInfo(
     .Version = REL::Version{ 2, 0, 0, 0 },

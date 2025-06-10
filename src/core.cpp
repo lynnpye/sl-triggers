@@ -1,4 +1,3 @@
-#include "core.h"
 
 namespace SLT {
 const std::string_view BASE_QUEST = "sl_triggersExtension";

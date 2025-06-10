@@ -1,7 +1,3 @@
-#include "parsing.h"
-#include <fstream>
-#include <sstream>
-#include <algorithm>
 
 using namespace SLT;
 
@@ -78,7 +74,7 @@ namespace {
         frame->gosubLabelMap.clear();
         
         for (size_t i = 0; i < frame->scriptTokens.size(); ++i) {
-            const auto& cmdLine = frame->scriptTokens[i];
+            const auto cmdLine = frame->GetCommandLine(i);
             if (!cmdLine || cmdLine->tokens.empty()) {
                 continue;
             }
@@ -241,7 +237,7 @@ ParseResult INIParser::Parse(const fs::path& filePath, FrameContext* frame) {
         
         auto commandLine = ParseINILine(line, actualLineNumber);
         if (commandLine) {
-            frame->scriptTokens.push_back(std::move(commandLine));
+            frame->scriptTokens.push_back(CommandLineManager::Create(std::move(commandLine)));
         }
         // Note: We don't add anything for empty/comment lines, but line numbers stay correct
     }
@@ -407,7 +403,7 @@ ParseResult JSONParser::Parse(const fs::path& filePath, FrameContext* frame) {
                 for (const auto& command : cmdArray) {
                     auto cmdLine = ProcessJSONCommand(command, lineNumber++);
                     if (cmdLine) {
-                        frame->scriptTokens.push_back(std::move(cmdLine));
+                        frame->scriptTokens.push_back(CommandLineManager::Create(std::move(cmdLine)));
                     }
                 }
             }

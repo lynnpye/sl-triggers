@@ -6,7 +6,7 @@ namespace SLT {
 class SLTNativeFunctions {
 public:
 // Non-latent functions
-static void CleanupThreadContext(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle);
+static void CleanupThreadContext(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle);
 
 static bool DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr);
 
@@ -23,11 +23,11 @@ static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_
 static bool PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
                                                         std::string_view scriptName);
                                 
-static ThreadContextHandle Pung(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle);
+static ForgeHandle Pung(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle);
 
-static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle, std::string_view variableName);
+static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view variableName);
 
-static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle, std::string_view variableName);
+static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view variableName);
 
 static bool RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
                                             std::vector<std::string> tokens);
@@ -100,7 +100,7 @@ public:
     }
 
     static std::int32_t Pung(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle) {
-        return static_cast<std::int32_t>(SLT::SLTNativeFunctions::Pung(PAPYRUS_FN_PARMS, static_cast<ThreadContextHandle>(threadContextHandle)));
+        return static_cast<std::int32_t>(SLT::SLTNativeFunctions::Pung(PAPYRUS_FN_PARMS, static_cast<ForgeHandle>(threadContextHandle)));
     }
 
     static RE::TESForm* ResolveFormVariable(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle, std::string_view variableName) {

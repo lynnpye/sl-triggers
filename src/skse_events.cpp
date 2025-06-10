@@ -1,11 +1,6 @@
-#include "skse_events.h"
-#include "forge.h"
-#include "engine.h"
-#include "contexting.h"
-#include "sl_triggers.h"
 
 namespace SLT {
-    static ContextManager* g_ContextManager = nullptr;
+    static GlobalContext* g_GlobalContext = nullptr;
 
 // Registration helper macro
 #define REGISTER_PAPYRUS_PROVIDER(ProviderClass, ClassName) \
@@ -18,7 +13,7 @@ namespace SLT {
 };
 
     void GameEventHandler::onLoad() {
-        g_ContextManager = &ContextManager::GetSingleton();
+        g_GlobalContext = &GlobalContext::GetSingleton();
         fs::path debugmsg_log = GetPluginPath() / "debugmsg.log";
         std::ofstream file(debugmsg_log, std::ios::trunc);
 
@@ -43,8 +38,8 @@ namespace SLT {
         FunctionLibrary::PrecacheLibraries();
         ScriptPoolManager::GetSingleton().InitializePool();
         auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-        if (!RegisterOptional(vm)) {
-            logger::error("Failed to successfully RegisterOptional");
+        if (!ForgeManager::Register(vm)) {
+            logger::error("Failed to successfully register Forge");
         }
         
         // Register serialization callbacks
@@ -52,8 +47,7 @@ namespace SLT {
         if (serialization) {
             serialization->SetSaveCallback([](SKSE::SerializationInterface* intfc) {
                 if (intfc->OpenRecord('SLTR', 1)) {
-                    OnOptionalSave(intfc);
-                    ContextManager::GetSingleton().Serialize(intfc);
+                    ForgeManager::OnSave(intfc);
                 }
             });
             
@@ -61,16 +55,14 @@ namespace SLT {
                 std::uint32_t type, version, length;
                 while (intfc->GetNextRecordInfo(type, version, length)) {
                     if (type == 'SLTR' && version == 1) {
-                        OnOptionalLoad(intfc);
-                        ContextManager::GetSingleton().Deserialize(intfc);
+                        ForgeManager::OnLoad(intfc);
                     }
                 }
             });
             
             serialization->SetRevertCallback([](SKSE::SerializationInterface* intfc) {
                 // Clear all contexts on new game
-                OnOptionalRevert(intfc);
-                ContextManager::GetSingleton().CleanupAllContexts();
+                ForgeManager::OnRevert(intfc);
             });
         }
     }
@@ -78,7 +70,6 @@ namespace SLT {
     void GameEventHandler::onNewGame() {
         SLT::GenerateNewSessionId(true);
         logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::GetSessionId());
-        SLT::OptionalManager::Clear();
     }
 
     void GameEventHandler::onPreLoadGame() {
@@ -88,7 +79,6 @@ namespace SLT {
     void GameEventHandler::onPostLoadGame() {
         SLT::GenerateNewSessionId(true);
         logger::info("{} starting session {}", SystemUtil::File::GetPluginName(), SLT::GetSessionId());
-        SLT::OptionalManager::Clear();
     }
 
     void GameEventHandler::onSaveGame() {

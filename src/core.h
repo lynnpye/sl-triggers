@@ -4,6 +4,31 @@
 
 namespace SLT {
 
+#pragma region Random type declarations
+enum ScriptType {
+    INVALID = 0,
+
+    INI,
+    JSON,
+
+
+    END
+};
+
+typedef std::uint32_t SKSEMessageType;
+typedef std::int32_t SLTSessionId;
+typedef std::int32_t ForgeHandle;
+
+extern const std::string_view BASE_QUEST;
+extern const std::string_view BASE_AME;
+#pragma endregion
+
+#pragma region Random function declarations
+fs::path GetPluginPath();
+SLTSessionId GenerateNewSessionId(bool force = false);
+SLTSessionId GetSessionId();
+#pragma endregion
+
 #pragma region LoggerGuard
 // RAII Logger Guard - logs on construction and destruction
 class LoggerGuard {
@@ -31,31 +56,6 @@ public:
 // Macro for convenience (optional)
 #define LOG_FUNCTION_SCOPE(func_name) LoggerGuard _log_guard(func_name)
 #define LOG_FUNCTION_SCOPE_CUSTOM(func_name, entry, exit) LoggerGuard _log_guard(func_name, entry, exit)
-#pragma endregion
-
-#pragma region Random type declarations
-enum ScriptType {
-    INVALID = 0,
-
-    INI,
-    JSON,
-
-
-    END
-};
-
-typedef std::uint32_t SKSEMessageType;
-typedef std::int32_t SLTSessionId;
-typedef std::int32_t ThreadContextHandle;
-
-extern const std::string_view BASE_QUEST;
-extern const std::string_view BASE_AME;
-#pragma endregion
-
-#pragma region Random function declarations
-fs::path GetPluginPath();
-SLTSessionId GenerateNewSessionId(bool force = false);
-SLTSessionId GetSessionId();
 #pragma endregion
 
 #pragma region SmartComparator

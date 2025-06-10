@@ -1,11 +1,6 @@
 #pragma push(warning)
 #pragma warning(disable:4100)
 
-#include "contexting.h"
-#include "engine.h"
-#include "coroutines.h"
-#include "forge.h"
-#include "sl_triggers.h"
 
 namespace SLT {
 
@@ -14,8 +9,8 @@ namespace SLT {
 #pragma region SLTNativeFunctions definition
 
 // Non-latent Functions
-void SLTNativeFunctions::CleanupThreadContext(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle) {
-    ContextManager::GetSingleton().CleanupContext(threadContextHandle);
+void SLTNativeFunctions::CleanupThreadContext(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle) {
+    GlobalContext::GetSingleton().CleanupContext(threadContextHandle);
 }
 
 bool SLTNativeFunctions::DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr) {
@@ -149,12 +144,12 @@ std::vector<std::string> SLTNativeFunctions::GetTriggerKeys(PAPYRUS_NATIVE_DECL,
 
 bool SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
                                         std::string_view scriptName) {
-    auto& manager = ContextManager::GetSingleton();
+    auto& manager = GlobalContext::GetSingleton();
     return manager.StartSLTScript(targetActor, scriptName);
 }
 
-ThreadContextHandle SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle) {
-    ThreadContextHandle outHandle = threadContextHandle;
+ForgeHandle SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle) {
+    ForgeHandle outHandle = threadContextHandle;
 
     [&]()
     {
@@ -217,7 +212,7 @@ ThreadContextHandle SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL, ThreadContextH
                     typeName = typeInfo->GetName();
                 RE::BSFixedString selfReportedScriptName(typeName);
                 if (selfReportedScriptName == targetCmdScriptName) {
-                    ThreadContextHandle cid = threadContextHandle;
+                    ForgeHandle cid = threadContextHandle;
 
                     if (cid) {
                         logger::warn("AME already setup with threadContextHandle, ignoring");
@@ -244,25 +239,27 @@ ThreadContextHandle SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL, ThreadContextH
                             logger::error("SLT AME missing a caster Actor");
                             return;
                         }
-                        ContextManager& contextManager = ContextManager::GetSingleton();
-                        auto* targetContext = contextManager.CreateTargetContext(actor);
+                        auto* targetContext = TargetContext::CreateTargetContext(actor);
 
                         auto it = std::find_if(targetContext->threads.begin(), targetContext->threads.end(),
-                        [&](const std::shared_ptr<ThreadContext>& tcptr) -> bool {
-                            return !tcptr->isClaimed && !tcptr->wasClaimed;
+                        [&](const ForgeHandle tchandle) -> bool {
+                            auto* tcptr = ThreadContextManager::GetFromHandle(tchandle);
+                            return tcptr && !tcptr->isClaimed && !tcptr->wasClaimed;
                         });
 
                         if (it == targetContext->threads.end()) {
                             it = std::find_if(targetContext->threads.begin(), targetContext->threads.end(),
-                            [&](const std::shared_ptr<ThreadContext>& tcptr) -> bool {
-                                return !tcptr->isClaimed;
+                            [&](const ForgeHandle tchandle) -> bool {
+                                auto* tcptr = ThreadContextManager::GetFromHandle(tchandle);
+                                return tcptr && !tcptr->isClaimed;
                             });
                         }
 
                         if (it != targetContext->threads.end()) {
-                            auto& threadCon = *it;
-                            threadCon->ame = ame;
-                            outHandle = threadCon->threadContextHandle;
+                            if (auto* threadCon = ThreadContextManager::GetFromHandle(*it)) {
+                                threadCon->ame = ame;
+                                outHandle = threadCon->GetHandle();
+                            }
                         }
                         else {
                             logger::error("Unable to find available unclaimed threadContext");
@@ -289,21 +286,25 @@ ThreadContextHandle SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL, ThreadContextH
     return outHandle;
 }
 
-RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle, std::string_view token) {
+RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view token) {
     if (!vm) return nullptr;
 
     RE::TESForm* finalResolution = nullptr;
-    if (ContextManager::GetSingleton().ResolveFormVariable(threadContextHandle, token)) {
-        auto* frame = ContextManager::GetSingleton().GetFrameContext(threadContextHandle);
-        finalResolution = frame->customResolveFormResult;
+    if (GlobalContext::GetSingleton().ResolveFormVariable(threadContextHandle, token)) {
+        auto* thread = ThreadContextManager::GetFromHandle(threadContextHandle);
+        if (thread) {
+            auto* frame = thread->GetCurrentFrame();
+            if (frame)
+                finalResolution = frame->customResolveFormResult;
+        }
     }
     return finalResolution;
 }
 
-std::string SLTNativeFunctions::ResolveValueVariable(PAPYRUS_NATIVE_DECL, ThreadContextHandle threadContextHandle, std::string_view token) {
+std::string SLTNativeFunctions::ResolveValueVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view token) {
     if (!vm) return "";
 
-    std::string finalResolution = ContextManager::GetSingleton().ResolveValueVariable(threadContextHandle, token);
+    std::string finalResolution = GlobalContext::GetSingleton().ResolveValueVariable(threadContextHandle, token);
     return finalResolution;
 }
 

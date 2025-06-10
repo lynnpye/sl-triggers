@@ -6,12 +6,14 @@ using namespace std::literals;
 #include <filesystem>
 namespace fs = std::filesystem;
 
+#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <cmath>
 #include <coroutine>
 #include <cstdint>
 #include <format>
+#include <fstream>
 #include <functional>
 #include <future>
 #include <memory>
@@ -21,6 +23,7 @@ namespace fs = std::filesystem;
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <unordered_map>
 #include <variant>
@@ -35,5 +38,12 @@ namespace fs = std::filesystem;
 namespace logger = SKSE::log;
 
 #include "core.h"
+#include "util.h"
 #include "skse_events.h"
 #include "bindings.h"
+#include "forge/forge.h"
+#include "globalcontext.h"
+#include "coroutines.h"
+#include "parsing.h"
+#include "engine.h"
+#include "sl_triggers.h"
