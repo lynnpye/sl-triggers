@@ -390,3 +390,4 @@ public:
 #include "forge_framecontext.h"
 #include "forge_threadcontext.h"
 #include "forge_targetcontext.h"
+#include "../globalcontext.h"

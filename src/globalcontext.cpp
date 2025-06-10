@@ -1,4 +1,6 @@
+#include "forge/forge.h"
 
+#include "engine.h"
 
 namespace SLT {
 using namespace SLT;
@@ -23,13 +25,6 @@ bool ScriptPoolManager::ApplyScript(RE::Actor* target, std::string_view scriptNa
         auto spell = FindSpellForMGEF(availableMGEF);
         if (!spell) {
             logger::error("Could not find spell for MGEF when applying script: {}", scriptName);
-            return false;
-        }
-        
-        // Create or get the target context and set up the script
-        auto targetContext = TargetContext::CreateTargetContext(target);
-        if (!targetContext) {
-            logger::error("Failed to create target context for script: {}", scriptName);
             return false;
         }
         
@@ -83,8 +78,16 @@ bool GlobalContext::StartSLTScript(RE::Actor* target, std::string_view initialSc
 
             // Create new thread context
             if (auto* targetContext = TargetContextManager::GetFromHandle(targetHandle)) {
-                targetContext->threads.push_back(ThreadContextManager::Create(std::move(std::make_unique<ThreadContext>(targetHandle, initialScriptName))));
-                handle = targetContext->threads.back();
+                auto threadPtr = std::make_unique<ThreadContext>(targetHandle, initialScriptName);
+                ForgeHandle threadHandle = ThreadContextManager::Create(std::move(threadPtr));
+                auto* thread = ThreadContextManager::GetFromHandle(threadHandle);
+                if (thread && thread->Initialize()) {
+                    targetContext->threads.push_back(threadHandle);
+                    handle = threadHandle;
+                } else {
+                    ThreadContextManager::DestroyFromHandle(threadHandle);
+                    handle = 0;
+                }
             }
         } catch (...) {
             throw;
@@ -136,7 +139,7 @@ void GlobalContext::OnLoad(SKSE::SerializationInterface* intfc) {
     using SH = SerializationHelper;
 
     if (!SH::ReadData(intfc, ForgeManager::nextForgeHandle)) {
-        logger::error("OnSave: Failed to write next handle for ForgeManager");
+        logger::error("OnSave: Failed to read next handle for ForgeManager");
         return;
     }
     
@@ -408,7 +411,7 @@ std::string GlobalContext::ResolveValueVariable(ForgeHandle threadContextHandle,
 bool GlobalContext::ResolveFormVariable(ForgeHandle threadContextHandle, std::string_view token) {
     auto* thread = ThreadContextManager::GetFromHandle(threadContextHandle);
     if (!thread) {
-        return "";
+        return false;
     }
     auto* frame = thread->GetCurrentFrame();
     if (!frame || token.empty()) return false;
@@ -460,7 +463,7 @@ bool GlobalContext::ResolveFormVariable(ForgeHandle threadContextHandle, std::st
     
     // Try direct form lookup for form IDs or editor IDs
     auto* aForm = FormUtil::Parse::GetForm(ResolveValueVariable(threadContextHandle, token)); // this may return nullptr but at this point SLT and all the extensions had a crack
-    if (aForm) {
+    if (aForm && frame) {
         frame->customResolveFormResult = aForm;
         return true;
     }

@@ -1,3 +1,7 @@
+#include "forge/forge.h"
+#include "engine.h"
+#include "sl_triggers.h"
+
 #pragma push(warning)
 #pragma warning(disable:4100)
 

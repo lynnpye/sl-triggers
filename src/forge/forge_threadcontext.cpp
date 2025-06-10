@@ -1,11 +1,12 @@
+#include "forge.h"
+
 namespace SLT {
 
 #pragma region ThreadContext
 
 TargetContext* ThreadContext::ptarget() const {
-    if (!_target && targetContextHandle && !targetFetchAttempted) {
-        targetFetchAttempted = true;
-        _target = nullptr; //TargetContextManager::GetFromHandle(targetContextHandle);
+    if (!_target && targetContextHandle && !targetFetchAttempted.exchange(true)) {
+        _target = TargetContextManager::GetFromHandle(targetContextHandle);
     }
     return _target;
 }
@@ -113,6 +114,7 @@ bool ThreadContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     
     using SH = SerializationHelper;
 
+    if (!SH::WriteData(a_intfc, targetContextHandle)) return false;
     if (!SH::WriteData(a_intfc, wasClaimed)) return false;
     if (!SH::WriteString(a_intfc, initialScriptName)) return false;
     
@@ -135,6 +137,7 @@ bool ThreadContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     
     using SH = SerializationHelper;
 
+    if (!SH::ReadData(a_intfc, targetContextHandle)) return false;
     isClaimed = false;
     if (!SH::ReadData(a_intfc, wasClaimed)) return false;
     if (!SH::ReadString(a_intfc, initialScriptName)) return false;
@@ -153,7 +156,8 @@ bool ThreadContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     }
     
     _target = nullptr;
-    targetFetchAttempted = false;
+    targetFetchAttempted.store(false);
+    ame = nullptr; // Reset transient ActiveEffect pointer
     
     // Read thread variables
     if (!SH::ReadStringMap(a_intfc, threadVars)) return false;

@@ -1,3 +1,6 @@
+#include "forge.h"
+
+#include "../parsing.h"
 
 namespace SLT {
 
@@ -11,8 +14,7 @@ bool FrameContext::ParseScript() {
 }
 
 ThreadContext* FrameContext::pthread() const {
-    if (!thread && threadContextHandle && !threadFetchAttempted) {
-        threadFetchAttempted = true;
+    if (!thread && threadContextHandle && !threadFetchAttempted.exchange(true)) {
         thread = ThreadContextManager::GetFromHandle(threadContextHandle);
     }
     return thread;
@@ -117,6 +119,7 @@ bool FrameContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
     using SH = SerializationHelper;
     
     // Write basic data
+    if (!SH::WriteData(a_intfc, threadContextHandle)) return false;
     if (!SH::WriteString(a_intfc, scriptName)) return false;
     if (!SH::WriteData(a_intfc, currentLine)) return false;
     if (!SH::WriteData(a_intfc, commandType)) return false;
@@ -157,6 +160,7 @@ bool FrameContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     using SH = SerializationHelper;
     
     // Read basic data
+    if (!SH::ReadData(a_intfc, threadContextHandle)) return false;
     if (!SH::ReadString(a_intfc, scriptName)) return false;
     if (!SH::ReadData(a_intfc, currentLine)) return false;
     if (!SH::ReadData(a_intfc, commandType)) return false;
@@ -211,7 +215,7 @@ bool FrameContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
     customResolveFormResult = nullptr;
     popAfterStepReturn = false;
     thread = nullptr; // Will be restored by ThreadContext
-    threadFetchAttempted = false;
+    threadFetchAttempted.store(false);
     
     return true;
 }

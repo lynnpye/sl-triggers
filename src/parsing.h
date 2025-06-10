@@ -2,6 +2,8 @@
 
 
 namespace SLT {
+class CommandLine;
+class FrameContext;
 
 // Forward declarations
 class IScriptParser;

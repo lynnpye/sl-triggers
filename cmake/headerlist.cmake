@@ -3,7 +3,6 @@ set(headers ${headers}
 	src/bindings.h
 	src/globalcontext.h
 	src/core.h
-	src/coroutines.h
 	src/engine.h
 	src/forge/forge.h
 	src/forge/forge_commandline.h

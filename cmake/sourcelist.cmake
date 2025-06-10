@@ -1,7 +1,6 @@
 set(sources ${sources}
     src/globalcontext.cpp
     src/core.cpp
-    src/coroutines.cpp
     src/engine.cpp
     src/forge/forge.cpp
     src/forge/forge_commandline.cpp

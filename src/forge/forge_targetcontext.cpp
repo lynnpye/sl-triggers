@@ -1,4 +1,4 @@
-
+#include "forge.h"
 
 namespace SLT {
 
@@ -79,12 +79,13 @@ bool TargetContext::Serialize(SKSE::SerializationInterface* a_intfc) const {
 }
 
 bool TargetContext::Deserialize(SKSE::SerializationInterface* a_intfc) {
-    if (!ForgeObject::Serialize(a_intfc)) return false;
+    // Fixed: was calling Serialize instead of Deserialize
+    if (!ForgeObject::Deserialize(a_intfc)) return false;
     
     using SH = SerializationHelper;
     
     // Read target FormID
-    std::int32_t savedFormID;
+    RE::FormID savedFormID;
     if (!SH::ReadData(a_intfc, savedFormID)) return false;
     
     // Resolve FormID (handles form ID changes between saves)

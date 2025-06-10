@@ -14,7 +14,7 @@ class ThreadContext;
 class FrameContext : public ForgeObject {
 private:
 
-    mutable bool threadFetchAttempted;
+    mutable std::atomic<bool> threadFetchAttempted;
     mutable ThreadContext* thread;
 
     mutable std::shared_mutex varlock;

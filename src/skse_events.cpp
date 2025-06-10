@@ -1,3 +1,6 @@
+#include "forge/forge.h"
+#include "engine.h"
+#include "sl_triggers.h"
 
 namespace SLT {
     static GlobalContext* g_GlobalContext = nullptr;
