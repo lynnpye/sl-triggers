@@ -92,6 +92,15 @@ std::vector<std::string> Util::String::Split(std::string_view a_str, std::string
     return { range.begin(), range.end() };
 }
 
+
+std::string Util::String::truncateAt(const std::string& str, char c) {
+    size_t pos = str.find(c);
+    if (pos != std::string::npos) {
+        return str.substr(0, pos);
+    }
+    return str;  // char not found, return original string
+}
+
 std::string Util::String::ltrim(std::string_view str) {
     auto start = std::find_if_not(str.begin(), str.end(), 
                                 [](unsigned char ch) { return std::isspace(ch); });

@@ -108,6 +108,7 @@ namespace Util
     struct String
     {
 		static std::vector<std::string> Split(std::string_view a_str, std::string_view a_delimiter);
+        static std::string truncateAt(const std::string& str, char c);
         static std::string ltrim(std::string_view str);
         static std::string rtrim(std::string_view str);
         static std::string trim(std::string_view str);

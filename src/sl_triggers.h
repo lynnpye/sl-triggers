@@ -35,7 +35,15 @@ static bool RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::A
 static void SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionKey,
                                             bool enabledState);
 
+static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
+
+static std::vector<std::string> SplitFileContents(PAPYRUS_NATIVE_DECL, std::string_view filecontents);
+
 static std::vector<std::string> Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input);
+
+static std::vector<std::string> Tokenizev2(PAPYRUS_NATIVE_DECL, std::string_view input);
+
+static std::vector<std::string> TokenizeForVariableSubstitution(PAPYRUS_NATIVE_DECL, std::string_view input);
 };
 #pragma endregion
 
@@ -45,7 +53,7 @@ static std::vector<std::string> Tokenize(PAPYRUS_NATIVE_DECL, std::string_view i
 class SLTPapyrusFunctionProvider : public SLT::binding::PapyrusFunctionProvider<SLTPapyrusFunctionProvider> {
 public:
     // Static Papyrus function implementations
-    static RE::TESForm* GetForm(PAPYRUS_STATIC_ARGS, std::string someFormOfFormIdentification) {
+    static RE::TESForm* GetForm(PAPYRUS_STATIC_ARGS, std::string_view someFormOfFormIdentification) {
         return SLT::SLTNativeFunctions::GetForm(PAPYRUS_FN_PARMS, someFormOfFormIdentification);
     }
 
@@ -57,12 +65,28 @@ public:
         return SLT::SLTNativeFunctions::GetSessionId(PAPYRUS_FN_PARMS);
     }
 
-    static std::string GetTranslatedString(PAPYRUS_STATIC_ARGS, const std::string input) {
+    static std::string GetTranslatedString(PAPYRUS_STATIC_ARGS, std::string_view input) {
         return SLT::SLTNativeFunctions::GetTranslatedString(PAPYRUS_FN_PARMS, input);
     }
 
-    static std::vector<std::string> Tokenize(PAPYRUS_STATIC_ARGS, std::string input) {
+    static bool SmartEquals(PAPYRUS_STATIC_ARGS, std::string_view a, std::string_view b) {
+        return SLT::SLTNativeFunctions::SmartEquals(PAPYRUS_FN_PARMS, a, b);
+    }
+
+    static std::vector<std::string> SplitFileContents(PAPYRUS_STATIC_ARGS, std::string_view content) {
+        return SLT::SLTNativeFunctions::SplitFileContents(PAPYRUS_FN_PARMS, content);
+    }
+
+    static std::vector<std::string> Tokenize(PAPYRUS_STATIC_ARGS, std::string_view input) {
         return SLT::SLTNativeFunctions::Tokenize(PAPYRUS_FN_PARMS, input);
+    }
+
+    static std::vector<std::string> Tokenizev2(PAPYRUS_STATIC_ARGS, std::string_view input) {
+        return SLT::SLTNativeFunctions::Tokenizev2(PAPYRUS_FN_PARMS, input);
+    }
+
+    static std::vector<std::string> TokenizeForVariableSubstitution(PAPYRUS_STATIC_ARGS, std::string_view input) {
+        return SLT::SLTNativeFunctions::TokenizeForVariableSubstitution(PAPYRUS_FN_PARMS, input);
     }
 
     void RegisterAllFunctions(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) {
@@ -72,7 +96,11 @@ public:
         reg.RegisterStatic("GetScriptsList", &SLTPapyrusFunctionProvider::GetScriptsList);
         reg.RegisterStatic("GetSessionId", &SLTPapyrusFunctionProvider::GetSessionId);
         reg.RegisterStatic("GetTranslatedString", &SLTPapyrusFunctionProvider::GetTranslatedString);
+        reg.RegisterStatic("SmartEquals", &SLTPapyrusFunctionProvider::SmartEquals);
+        reg.RegisterStatic("SplitFileContents", &SLTPapyrusFunctionProvider::SplitFileContents);
         reg.RegisterStatic("Tokenize", &SLTPapyrusFunctionProvider::Tokenize);
+        reg.RegisterStatic("Tokenizev2", &SLTPapyrusFunctionProvider::Tokenizev2);
+        reg.RegisterStatic("TokenizeForVariableSubstitution", &SLTPapyrusFunctionProvider::TokenizeForVariableSubstitution);
     }
 };
 

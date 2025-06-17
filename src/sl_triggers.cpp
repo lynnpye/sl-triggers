@@ -329,6 +329,72 @@ void SLTNativeFunctions::SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_vi
     }
 }
 
+namespace {
+bool isNumeric(std::string_view str, float& outValue) {
+    const char* begin = str.data();
+    const char* end = begin + str.size();
+
+    auto result = std::from_chars(begin, end, outValue);
+    return result.ec == std::errc() && result.ptr == end;
+}
+}
+
+bool SLTNativeFunctions::SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b) {
+    float aNum = 0.0, bNum = 0.0;
+    bool aIsNum = isNumeric(a, aNum);
+    bool bIsNum = isNumeric(b, bNum);
+
+    bool outcome = false;
+    if (aIsNum && bIsNum) {
+        outcome = (std::fabs(aNum - bNum) < FLT_EPSILON);  // safe float comparison
+    } else {
+        outcome = (a == b);
+    }
+
+    return outcome;
+}
+
+std::vector<std::string> SLTNativeFunctions::SplitFileContents(PAPYRUS_NATIVE_DECL, std::string_view content_view) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    size_t i = 0;
+    std::string content(content_view.data());
+    std::string tmpstr;
+    size_t len = content.length();
+
+    while (i < len) {
+        if (content[i] == '\r') {
+            if (i > start) {
+                tmpstr = Util::String::truncateAt(content.substr(start, i - start), ';');
+                lines.push_back(tmpstr);
+            }
+            if (i + 1 < len && content[i + 1] == '\n') {
+                i += 2;  // Windows CRLF
+            } else {
+                i += 1;  // Classic Mac CR
+            }
+            start = i;
+        } else if (content[i] == '\n') {
+            if (i > start) {
+                tmpstr = Util::String::truncateAt(content.substr(start, i - start), ';');
+                lines.push_back(tmpstr);
+            }
+            i += 1;
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+
+    // Add last line if there's any remaining
+    if (start < len) {
+        tmpstr = Util::String::truncateAt(content.substr(start), ';');
+        lines.push_back(tmpstr);
+    }
+
+    return lines;
+}
+
 std::vector<std::string> SLTNativeFunctions::Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input) {
     std::vector<std::string> tokens;
     std::string current;
@@ -394,6 +460,190 @@ std::vector<std::string> SLTNativeFunctions::Tokenize(PAPYRUS_NATIVE_DECL, std::
         tokens.push_back(current);
     }
     return tokens;
+}
+
+std::vector<std::string> SLTNativeFunctions::Tokenizev2(PAPYRUS_NATIVE_DECL, std::string_view input) {
+    std::vector<std::string> tokens;
+    size_t pos = 0;
+    size_t len = input.length();
+    
+    while (pos < len) {
+        // Skip whitespace
+        while (pos < len && std::isspace(input[pos])) {
+            pos++;
+        }
+        
+        if (pos >= len) break;
+        
+        // Check for comment - everything from ';' to end of line is ignored
+        if (input[pos] == ';') {
+            break; // Stop processing, ignore rest of line
+        }
+        
+        // Check for $" (dollar-double-quoted interpolation)
+        if (pos + 1 < len && input[pos] == '$' && input[pos + 1] == '"') {
+            size_t start = pos;
+            pos += 2; // Skip $"
+            
+            // Find closing quote, handling escaped quotes ""
+            while (pos < len) {
+                if (input[pos] == '"') {
+                    // Check for escaped quote ""
+                    if (pos + 1 < len && input[pos + 1] == '"') {
+                        pos += 2; // Skip escaped quote pair
+                    } else {
+                        pos++; // Include the closing quote
+                        break; // Found unescaped closing quote
+                    }
+                } else {
+                    pos++;
+                }
+            }
+            
+            // Add token with $" prefix, including trailing quote
+            tokens.push_back(std::string(input.substr(start, pos - start)));
+        }
+        // Check for " (double-quoted literal)
+        else if (input[pos] == '"') {
+            size_t start = pos;
+            pos++; // Skip opening quote
+            
+            // Find closing quote, handling escaped quotes ""
+            while (pos < len) {
+                if (input[pos] == '"') {
+                    // Check for escaped quote ""
+                    if (pos + 1 < len && input[pos + 1] == '"') {
+                        pos += 2; // Skip escaped quote pair
+                    } else {
+                        pos++; // Include the closing quote
+                        break; // Found unescaped closing quote
+                    }
+                } else {
+                    pos++;
+                }
+            }
+            
+            // Add token with leading and trailing quotes
+            tokens.push_back(std::string(input.substr(start, pos - start)));
+        }
+        // Bare token - collect until whitespace
+        else {
+            size_t start = pos;
+            
+            while (pos < len && !std::isspace(input[pos])) {
+                pos++;
+            }
+            
+            tokens.push_back(std::string(input.substr(start, pos - start)));
+        }
+    }
+    
+    return tokens;
+}
+
+namespace {
+bool IsValidVariableName(const std::string& name) {
+    if (name.empty()) return false;
+    
+    for (char c : name) {
+        if (!std::isalnum(c) && c != '_' && c != '.') {
+            return false;
+        }
+    }
+    
+    // Don't allow names starting or ending with dots
+    return name.front() != '.' && name.back() != '.';
+}
+}
+
+std::vector<std::string> SLTNativeFunctions::TokenizeForVariableSubstitution(PAPYRUS_NATIVE_DECL, std::string_view input) {
+    std::vector<std::string> result;
+    
+    if (input.empty()) {
+        return result;
+    }
+    
+    size_t pos = 0;
+    std::string currentLiteral;
+    
+    const std::set<std::string> validScopes = {"local", "thread", "target", "global"};
+    
+    while (pos < input.length()) {
+        size_t openBrace = input.find('{', pos);
+        
+        if (openBrace == std::string::npos) {
+            // No more braces, add remaining text as literal
+            currentLiteral += input.substr(pos);
+            break;
+        }
+        
+        // Add text before the brace as literal
+        currentLiteral += input.substr(pos, openBrace - pos);
+        
+        // Check for escaped opening brace {{
+        if (openBrace + 1 < input.length() && input[openBrace + 1] == '{') {
+            currentLiteral += "{";  // Add single literal brace
+            pos = openBrace + 2;    // Skip both braces
+            continue;
+        }
+        
+        // Find matching closing brace
+        size_t closeBrace = input.find('}', openBrace + 1);
+        if (closeBrace == std::string::npos) {
+            // No matching closing brace, treat as literal
+            currentLiteral += input.substr(openBrace);
+            break;
+        }
+        
+        // Check for escaped closing brace }}
+        if (closeBrace + 1 < input.length() && input[closeBrace + 1] == '}') {
+            // This is an escaped closing brace, not end of variable
+            currentLiteral += input.substr(openBrace, closeBrace - openBrace + 2);
+            currentLiteral.back() = '}';  // Replace second } with single }
+            pos = closeBrace + 2;
+            continue;
+        }
+        
+        // Extract variable name between braces
+        std::string varName = std::string(input.substr(openBrace + 1, closeBrace - openBrace - 1));
+        
+        // Trim whitespace from variable name
+        varName.erase(0, varName.find_first_not_of(" \t"));
+        varName.erase(varName.find_last_not_of(" \t") + 1);
+        
+        if (!varName.empty() && IsValidVariableName(varName)) {
+            // Check if variable has a scope and if it's valid
+            size_t dotPos = varName.find('.');
+            if (dotPos != std::string::npos) {
+                std::string scope = varName.substr(0, dotPos);
+                if (validScopes.find(scope) == validScopes.end()) {
+                    // Invalid scope, remove scope and dot
+                    varName = varName.substr(dotPos + 1);
+                }
+            }
+            
+            // Add current literal if not empty
+            if (!currentLiteral.empty()) {
+                result.push_back("\"" + currentLiteral + "\"");
+                currentLiteral.clear();
+            }
+            
+            // Add variable name bare (with $ prefix)
+            result.push_back("$" + varName);
+        } else {
+            // Invalid or empty variable name, treat braces as literal
+            currentLiteral += input.substr(openBrace, closeBrace - openBrace + 1);
+        }
+        
+        pos = closeBrace + 1;
+    }
+    
+    // Add final literal if not empty
+    if (!currentLiteral.empty()) {
+        result.push_back("\"" + currentLiteral + "\"");
+    }
+    
+    return result;
 }
 
 
