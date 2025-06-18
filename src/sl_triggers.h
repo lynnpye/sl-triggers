@@ -6,8 +6,6 @@ namespace SLT {
 class SLTNativeFunctions {
 public:
 // Non-latent functions
-static void CleanupThreadContext(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle);
-
 static bool DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr);
 
 static RE::TESForm* GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID);
@@ -20,15 +18,6 @@ static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view inp
 
 static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey);
 
-static bool PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
-                                                        std::string_view scriptName);
-                                
-static ForgeHandle Pung(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle);
-
-static RE::TESForm* ResolveFormVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view variableName);
-
-static std::string ResolveValueVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view variableName);
-
 static bool RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
                                             std::vector<std::string> tokens);
 
@@ -38,6 +27,10 @@ static void SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionK
 static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
 
 static std::vector<std::string> SplitFileContents(PAPYRUS_NATIVE_DECL, std::string_view filecontents);
+
+static bool StartScript(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, std::string_view initialScriptName);
+
+static std::string Trim(PAPYRUS_NATIVE_DECL, std::string_view str);
 
 static std::vector<std::string> Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input);
 
@@ -89,6 +82,10 @@ public:
         return SLT::SLTNativeFunctions::TokenizeForVariableSubstitution(PAPYRUS_FN_PARMS, input);
     }
 
+    static std::string Trim(PAPYRUS_STATIC_ARGS, std::string_view str) {
+        return SLT::SLTNativeFunctions::Trim(PAPYRUS_FN_PARMS, str);
+    }
+
     void RegisterAllFunctions(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) {
         SLT::binding::PapyrusRegistrar<SLTPapyrusFunctionProvider> reg(vm, className);
         
@@ -101,6 +98,7 @@ public:
         reg.RegisterStatic("Tokenize", &SLTPapyrusFunctionProvider::Tokenize);
         reg.RegisterStatic("Tokenizev2", &SLTPapyrusFunctionProvider::Tokenizev2);
         reg.RegisterStatic("TokenizeForVariableSubstitution", &SLTPapyrusFunctionProvider::TokenizeForVariableSubstitution);
+        reg.RegisterStatic("Trim", &SLTPapyrusFunctionProvider::Trim);
     }
 };
 
@@ -111,32 +109,12 @@ class SLTInternalPapyrusFunctionProvider : public SLT::binding::PapyrusFunctionP
 public:
     // Static Papyrus function implementations
     // NON-LATENT
-    static void CleanupThreadContext(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle) {
-        SLT::SLTNativeFunctions::CleanupThreadContext(PAPYRUS_FN_PARMS, threadContextHandle);
-    }
-
     static bool DeleteTrigger(PAPYRUS_STATIC_ARGS, std::string extKeyStr, std::string trigKeyStr) {
         return SLT::SLTNativeFunctions::DeleteTrigger(PAPYRUS_FN_PARMS, extKeyStr, trigKeyStr);
     }
 
     static std::vector<std::string> GetTriggerKeys(PAPYRUS_STATIC_ARGS, std::string_view extensionKey) {
         return SLT::SLTNativeFunctions::GetTriggerKeys(PAPYRUS_FN_PARMS, extensionKey);
-    }
-
-    static bool PrepareContextForTargetedScript(PAPYRUS_STATIC_ARGS, RE::Actor* targetActor, std::string scriptname) {
-        return SLT::SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_FN_PARMS, targetActor, scriptname);
-    }
-
-    static std::int32_t Pung(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle) {
-        return static_cast<std::int32_t>(SLT::SLTNativeFunctions::Pung(PAPYRUS_FN_PARMS, static_cast<ForgeHandle>(threadContextHandle)));
-    }
-
-    static RE::TESForm* ResolveFormVariable(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle, std::string_view variableName) {
-        return SLT::SLTNativeFunctions::ResolveFormVariable(PAPYRUS_FN_PARMS, threadContextHandle, variableName);
-    }
-
-    static std::string ResolveValueVariable(PAPYRUS_STATIC_ARGS, std::int32_t threadContextHandle, std::string_view variableName) {
-        return SLT::SLTNativeFunctions::ResolveValueVariable(PAPYRUS_FN_PARMS, threadContextHandle, variableName);
     }
 
     static bool RunOperationOnActor(PAPYRUS_STATIC_ARGS, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
@@ -148,18 +126,18 @@ public:
         SLT::SLTNativeFunctions::SetExtensionEnabled(PAPYRUS_FN_PARMS, extensionKey, enabledState);
     }
 
+    static bool StartScript(PAPYRUS_STATIC_ARGS, RE::Actor* cmdTarget, std::string_view initialScriptName) {
+        return SLT::SLTNativeFunctions::StartScript(PAPYRUS_FN_PARMS, cmdTarget, initialScriptName);
+    }
+
     void RegisterAllFunctions(RE::BSScript::Internal::VirtualMachine* vm, std::string_view className) {
         SLT::binding::PapyrusRegistrar<SLTInternalPapyrusFunctionProvider> reg(vm, className);
 
-        reg.RegisterStatic("CleanupThreadContext", &SLTInternalPapyrusFunctionProvider::CleanupThreadContext);
         reg.RegisterStatic("DeleteTrigger", &SLTInternalPapyrusFunctionProvider::DeleteTrigger);
         reg.RegisterStatic("GetTriggerKeys", &SLTInternalPapyrusFunctionProvider::GetTriggerKeys);
-        reg.RegisterStatic("PrepareContextForTargetedScript", &SLTInternalPapyrusFunctionProvider::PrepareContextForTargetedScript);
-        reg.RegisterStatic("Pung", &SLTInternalPapyrusFunctionProvider::Pung);
-        reg.RegisterStatic("ResolveFormVariable", &SLTInternalPapyrusFunctionProvider::ResolveFormVariable);
-        reg.RegisterStatic("ResolveValueVariable", &SLTInternalPapyrusFunctionProvider::ResolveValueVariable);
         reg.RegisterStatic("RunOperationOnActor", &SLTInternalPapyrusFunctionProvider::RunOperationOnActor);
         reg.RegisterStatic("SetExtensionEnabled", &SLTInternalPapyrusFunctionProvider::SetExtensionEnabled);
+        reg.RegisterStatic("StartScript", &SLTInternalPapyrusFunctionProvider::StartScript);
     }
 };
 #pragma endregion

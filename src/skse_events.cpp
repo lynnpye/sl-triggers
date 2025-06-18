@@ -1,9 +1,7 @@
-#include "forge/forge.h"
 #include "engine.h"
 #include "sl_triggers.h"
 
 namespace SLT {
-    static GlobalContext* g_GlobalContext = nullptr;
 
 // Registration helper macro
 #define REGISTER_PAPYRUS_PROVIDER(ProviderClass, ClassName) \
@@ -16,7 +14,6 @@ namespace SLT {
 };
 
     void GameEventHandler::onLoad() {
-        g_GlobalContext = &GlobalContext::GetSingleton();
         fs::path debugmsg_log = GetPluginPath() / "debugmsg.log";
         std::ofstream file(debugmsg_log, std::ios::trunc);
 
@@ -40,34 +37,6 @@ namespace SLT {
     void GameEventHandler::onDataLoaded() {
         FunctionLibrary::PrecacheLibraries();
         ScriptPoolManager::GetSingleton().InitializePool();
-        auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-        if (!ForgeManager::Register(vm)) {
-            logger::error("Failed to successfully register Forge");
-        }
-        
-        // Register serialization callbacks
-        auto* serialization = SKSE::GetSerializationInterface();
-        if (serialization) {
-            serialization->SetSaveCallback([](SKSE::SerializationInterface* intfc) {
-                if (intfc->OpenRecord('SLTR', 1)) {
-                    ForgeManager::OnSave(intfc);
-                }
-            });
-            
-            serialization->SetLoadCallback([](SKSE::SerializationInterface* intfc) {
-                std::uint32_t type, version, length;
-                while (intfc->GetNextRecordInfo(type, version, length)) {
-                    if (type == 'SLTR' && version == 1) {
-                        ForgeManager::OnLoad(intfc);
-                    }
-                }
-            });
-            
-            serialization->SetRevertCallback([](SKSE::SerializationInterface* intfc) {
-                // Clear all contexts on new game
-                ForgeManager::OnRevert(intfc);
-            });
-        }
     }
 
     void GameEventHandler::onNewGame() {

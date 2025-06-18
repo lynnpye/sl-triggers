@@ -222,4 +222,90 @@ private:
 };
 #pragma endregion
 
+#pragma region ScriptPoolManager
+
+class ScriptPoolManager {
+public:
+    static ScriptPoolManager& GetSingleton() {
+        static ScriptPoolManager singleton;
+        return singleton;
+    }
+
+    void InitializePool() {
+        spellPool.clear();
+        mgefPool.clear();
+
+        int highWaterMark = 0;
+        std::string lastSpellId;
+        
+        for (int i = 1; i <= 99; ++i) {
+            std::string spellId = "slt_cmds" + std::to_string(i).insert(0, 2 - std::to_string(i).length(), '0');
+            if (auto spell = RE::TESForm::LookupByEditorID<RE::SpellItem>(spellId)) {
+                spellPool.push_back(spell);
+                highWaterMark = i;
+                lastSpellId = spellId;
+            } else {
+                break;
+            }
+        }
+        
+        for (int i = 1; i <= highWaterMark; ++i) {
+            std::string mgefId = "slt_cmd" + std::to_string(i).insert(0, 2 - std::to_string(i).length(), '0');
+            if (auto mgef = RE::TESForm::LookupByEditorID<RE::EffectSetting>(mgefId)) {
+                mgefPool.push_back(mgef);
+            } else {
+                highWaterMark = i;
+                logger::warn("Failed to find magic effect: [{}]({})\n\
+                    Fewer MGEF records than SPEL records. Using reduced high water mark {} and reducing SPEL pool to match", i, mgefId, highWaterMark);
+                spellPool.resize(highWaterMark);
+                break;
+            }
+        }
+        
+        logger::info("Script pool initialized: {} spells, {} magic effects", 
+                    spellPool.size(), mgefPool.size());
+    }
+
+    RE::EffectSetting* FindAvailableMGEF(RE::Actor* target) {
+        if (!target) return nullptr;
+        
+        auto magicTarget = target->AsMagicTarget();
+        if (!magicTarget) return nullptr;
+        
+        for (auto mgef : mgefPool) {
+            if (!magicTarget->HasMagicEffect(mgef)) {
+                return mgef;
+            }
+        }
+        
+        logger::warn("No available magic effects in pool for target {}", 
+                    target->GetDisplayFullName());
+        return nullptr;
+    }
+    
+    RE::SpellItem* FindSpellForMGEF(RE::EffectSetting* mgef) {
+        if (!mgef) return nullptr;
+        
+        auto it = std::find(mgefPool.begin(), mgefPool.end(), mgef);
+        if (it != mgefPool.end()) {
+            size_t index = std::distance(mgefPool.begin(), it);
+            if (index < spellPool.size()) {
+                return spellPool[index];
+            }
+        }
+        
+        return nullptr;
+    }
+    
+    bool ApplyScript(RE::Actor* target, std::string_view scriptName);
+
+private:
+    std::vector<RE::SpellItem*> spellPool;
+    std::vector<RE::EffectSetting*> mgefPool;
+    
+    ScriptPoolManager() = default;
+    ScriptPoolManager(const ScriptPoolManager&) = delete;
+    ScriptPoolManager& operator=(const ScriptPoolManager&) = delete;
+};
+#pragma endregion
 }

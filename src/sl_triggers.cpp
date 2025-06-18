@@ -1,4 +1,3 @@
-#include "forge/forge.h"
 #include "engine.h"
 #include "sl_triggers.h"
 
@@ -13,10 +12,6 @@ namespace SLT {
 #pragma region SLTNativeFunctions definition
 
 // Non-latent Functions
-void SLTNativeFunctions::CleanupThreadContext(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle) {
-    GlobalContext::GetSingleton().CleanupContext(threadContextHandle);
-}
-
 bool SLTNativeFunctions::DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::string_view trigKeyStr) {
     if (!SystemUtil::File::IsValidPathComponent(extKeyStr) || !SystemUtil::File::IsValidPathComponent(trigKeyStr)) {
         logger::error("Invalid characters in extensionKey ({}) or triggerKey ({})", extKeyStr, trigKeyStr);
@@ -146,172 +141,6 @@ std::vector<std::string> SLTNativeFunctions::GetTriggerKeys(PAPYRUS_NATIVE_DECL,
     return result;
 }
 
-bool SLTNativeFunctions::PrepareContextForTargetedScript(PAPYRUS_NATIVE_DECL, RE::Actor* targetActor, 
-                                        std::string_view scriptName) {
-    auto& manager = GlobalContext::GetSingleton();
-    return manager.StartSLTScript(targetActor, scriptName);
-}
-
-ForgeHandle SLTNativeFunctions::Pung(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle) {
-    ForgeHandle outHandle = threadContextHandle;
-
-    [&]()
-    {
-        if (!vm)
-            return;
-        
-        // Validate stackId first
-        if (stackId == 0 || stackId == static_cast<RE::VMStackID>(-1)) {
-            logger::warn("Invalid stackId: 0x{:X}", stackId);
-            return;
-        }
-
-        auto* handlePolicy = vm->GetObjectHandlePolicy();
-        if (!handlePolicy) {
-            logger::error("Unable to get handle policy");
-            return;
-        }
-        
-        RE::BSScript::Stack* stackPtr = nullptr;
-        
-        try {
-            if (!vm->GetStackByID(stackId, &stackPtr)) {
-                logger::warn("GetStackByID returned false for ID: 0x{:X}", stackId);
-                return;
-            }
-            
-            if (!stackPtr) {
-                logger::warn("GetStackByID succeeded but returned null pointer for ID: 0x{:X}", stackId);
-                return;
-            }
-        } catch (const std::exception& e) {
-            logger::error("Exception in GetStackByID: {}", e.what());
-            return;
-        } catch (...) {
-            logger::error("Unknown exception in GetStackByID for stackId: 0x{:X}", stackId);
-            return;
-        }
-        
-        if (!stackPtr->owningTasklet) {
-            logger::warn("Stack has no owning tasklet for ID: 0x{:X}", stackId);
-            return;
-        }
-        
-        auto taskletPtr = stackPtr->owningTasklet;
-        
-        if (!taskletPtr->topFrame) {
-            logger::warn("Tasklet has no top frame for stack ID: 0x{:X}", stackId);
-            return;
-        }
-
-        RE::BSFixedString targetCmdScriptName("sl_triggersCmd");
-
-        RE::BSScript::Variable& self = taskletPtr->topFrame->self;
-        if (self.IsObject()) {
-            auto selfObject = self.GetObject();
-            if (selfObject) {
-                auto* typeInfo = selfObject->GetTypeInfo();
-                std::string typeName = "<unknown or irretrievable>";
-                if (typeInfo)
-                    typeName = typeInfo->GetName();
-                RE::BSFixedString selfReportedScriptName(typeName);
-                if (selfReportedScriptName == targetCmdScriptName) {
-                    ForgeHandle cid = threadContextHandle;
-
-                    if (cid) {
-                        logger::warn("AME already setup with threadContextHandle, ignoring");
-                    } else {
-                        // find target based on actor and get threadContextHandle for !isClaimed
-                        auto* handlePolicy = vm->GetObjectHandlePolicy();
-                        auto* bindPolicy = vm->GetObjectBindPolicy();
-                        if (!handlePolicy || !bindPolicy) {
-                            logger::error("Unable to obtain vm policies");
-                            return;
-                        }
-                        auto* ameRawPtr = handlePolicy->GetObjectForHandle(RE::ActiveEffect::VMTYPEID, selfObject->GetHandle());
-                        if (!ameRawPtr) {
-                            logger::error("GetObjectForHandle returned null AME");
-                            return;
-                        }
-                        RE::ActiveEffect* ame = static_cast<RE::ActiveEffect*>(ameRawPtr);
-                        if (!ame) {
-                            logger::error("Unable to cast to correct AME");
-                            return;
-                        }
-                        RE::Actor* actor = ame->GetCasterActor().get();
-                        if (!actor) {
-                            logger::error("SLT AME missing a caster Actor");
-                            return;
-                        }
-                        auto* targetContext = TargetContext::CreateTargetContext(actor);
-
-                        auto it = std::find_if(targetContext->threads.begin(), targetContext->threads.end(),
-                        [&](const ForgeHandle tchandle) -> bool {
-                            auto* tcptr = ThreadContextManager::GetFromHandle(tchandle);
-                            return tcptr && !tcptr->isClaimed && !tcptr->wasClaimed;
-                        });
-
-                        if (it == targetContext->threads.end()) {
-                            it = std::find_if(targetContext->threads.begin(), targetContext->threads.end(),
-                            [&](const ForgeHandle tchandle) -> bool {
-                                auto* tcptr = ThreadContextManager::GetFromHandle(tchandle);
-                                return tcptr && !tcptr->isClaimed;
-                            });
-                        }
-
-                        if (it != targetContext->threads.end()) {
-                            if (auto* threadCon = ThreadContextManager::GetFromHandle(*it)) {
-                                threadCon->ame = ame;
-                                outHandle = threadCon->GetHandle();
-                            }
-                        }
-                        else {
-                            logger::error("Unable to find available unclaimed threadContext");
-                            return;
-                        }
-                    }
-                }
-                else {
-                    logger::error("AME is not {}", targetCmdScriptName.c_str());
-                    return;
-                }
-            }
-            else {
-                logger::error("AME could not obtain Object");
-                return;
-            }
-        }
-        else {
-            logger::error("AME is not Object");
-            return;
-        }
-    }();
-
-    return outHandle;
-}
-
-RE::TESForm* SLTNativeFunctions::ResolveFormVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view token) {
-    if (!vm) return nullptr;
-
-    RE::TESForm* finalResolution = nullptr;
-    if (GlobalContext::GetSingleton().ResolveFormVariable(threadContextHandle, token)) {
-        auto* thread = ThreadContextManager::GetFromHandle(threadContextHandle);
-        if (thread) {
-            auto* frame = thread->GetCurrentFrame();
-            if (frame)
-                finalResolution = frame->customResolveFormResult;
-        }
-    }
-    return finalResolution;
-}
-
-std::string SLTNativeFunctions::ResolveValueVariable(PAPYRUS_NATIVE_DECL, ForgeHandle threadContextHandle, std::string_view token) {
-    if (!vm) return "";
-
-    std::string finalResolution = GlobalContext::GetSingleton().ResolveValueVariable(threadContextHandle, token);
-    return finalResolution;
-}
-
 bool SLTNativeFunctions::RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
     std::vector<std::string> tokens) {
     return OperationRunner::RunOperationOnActor(cmdTarget, cmdPrimary, tokens);
@@ -393,6 +222,10 @@ std::vector<std::string> SLTNativeFunctions::SplitFileContents(PAPYRUS_NATIVE_DE
     }
 
     return lines;
+}
+
+bool SLTNativeFunctions::StartScript(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, std::string_view initialScriptName) {
+    return ScriptPoolManager::GetSingleton().ApplyScript(cmdTarget, initialScriptName);
 }
 
 std::vector<std::string> SLTNativeFunctions::Tokenize(PAPYRUS_NATIVE_DECL, std::string_view input) {
@@ -624,7 +457,7 @@ std::vector<std::string> SLTNativeFunctions::TokenizeForVariableSubstitution(PAP
             
             // Add current literal if not empty
             if (!currentLiteral.empty()) {
-                result.push_back("\"" + currentLiteral + "\"");
+                result.push_back(currentLiteral);
                 currentLiteral.clear();
             }
             
@@ -640,10 +473,14 @@ std::vector<std::string> SLTNativeFunctions::TokenizeForVariableSubstitution(PAP
     
     // Add final literal if not empty
     if (!currentLiteral.empty()) {
-        result.push_back("\"" + currentLiteral + "\"");
+        result.push_back(currentLiteral);
     }
     
     return result;
+}
+
+std::string SLTNativeFunctions::Trim(PAPYRUS_NATIVE_DECL, std::string_view str) {
+    return Util::String::trim(str);
 }
 
 

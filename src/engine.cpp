@@ -24,7 +24,7 @@ bool OperationRunner::RunOperationOnActor(RE::Actor* targetActor,
     }
     
     auto vmhandle = vm->GetObjectHandlePolicy()->GetHandleForObject(RE::ActiveEffect::VMTYPEID, cmdPrimary);
-    RE::BSFixedString callbackEvent("OnSetOperationCompleted");
+    RE::BSFixedString callbackEvent("OnRunOperationOnActorCompleted");
     
     auto resultCallback = RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor>(
         new VoidCallbackFunctor([vm, vmhandle, callbackEvent]() {
