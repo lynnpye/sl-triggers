@@ -76,7 +76,7 @@ std::vector<std::string> SLTNativeFunctions::GetScriptsList(PAPYRUS_NATIVE_DECL)
 }
 
 SLTSessionId SLTNativeFunctions::GetSessionId(PAPYRUS_NATIVE_DECL) {
-    return SLT::GenerateNewSessionId();
+    return SLT::GetSessionId();
 }
 
 std::string SLTNativeFunctions::GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input) {
@@ -224,6 +224,24 @@ std::vector<std::string> SLTNativeFunctions::SplitFileContents(PAPYRUS_NATIVE_DE
     return lines;
 }
 
+std::vector<std::string> SLTNativeFunctions::SplitScriptContents(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename) {
+    std::vector<std::string> lines;
+    fs::path filepath = GetScriptfilePath(scriptfilename);
+
+    if (fs::exists(filepath) && fs::is_regular_file(filepath)) {
+        std::ifstream file(filepath);
+        if (file.good()) {
+            std::string line;
+            while (std::getline(file, line)) {
+                line = Util::String::truncateAt(Util::String::trim(line), ';');
+                lines.push_back(line);
+            }
+        }
+    }
+
+    return lines;
+}
+
 bool SLTNativeFunctions::StartScript(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, std::string_view initialScriptName) {
     return ScriptPoolManager::GetSingleton().ApplyScript(cmdTarget, initialScriptName);
 }
@@ -313,7 +331,7 @@ std::vector<std::string> SLTNativeFunctions::Tokenizev2(PAPYRUS_NATIVE_DECL, std
             break; // Stop processing, ignore rest of line
         }
         
-        // Check for $" (dollar-double-quoted interpolation)
+        // Check for $" (dollar-double-quoted interpolation) - HIGHEST PRECEDENCE
         if (pos + 1 < len && input[pos] == '$' && input[pos + 1] == '"') {
             size_t start = pos;
             pos += 2; // Skip $"
@@ -336,7 +354,7 @@ std::vector<std::string> SLTNativeFunctions::Tokenizev2(PAPYRUS_NATIVE_DECL, std
             // Add token with $" prefix, including trailing quote
             tokens.push_back(std::string(input.substr(start, pos - start)));
         }
-        // Check for " (double-quoted literal)
+        // Check for " (double-quoted literal) - SECOND PRECEDENCE
         else if (input[pos] == '"') {
             size_t start = pos;
             pos++; // Skip opening quote
@@ -359,7 +377,24 @@ std::vector<std::string> SLTNativeFunctions::Tokenizev2(PAPYRUS_NATIVE_DECL, std
             // Add token with leading and trailing quotes
             tokens.push_back(std::string(input.substr(start, pos - start)));
         }
-        // Bare token - collect until whitespace
+        // Check for [ (goto label) - THIRD PRECEDENCE
+        else if (input[pos] == '[') {
+            size_t start = pos;
+            pos++; // Skip opening bracket
+            
+            // Find closing bracket
+            while (pos < len && input[pos] != ']') {
+                pos++;
+            }
+            
+            if (pos < len && input[pos] == ']') {
+                pos++; // Include the closing bracket
+            }
+            
+            // Add token with leading and trailing brackets
+            tokens.push_back(std::string(input.substr(start, pos - start)));
+        }
+        // Bare token - collect until whitespace - LOWEST PRECEDENCE
         else {
             size_t start = pos;
             

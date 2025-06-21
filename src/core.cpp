@@ -10,6 +10,11 @@ fs::path GetPluginPath() {
     return pluginPath;
 }
 
+fs::path GetScriptfilePath(std::string_view scriptfilename) {
+    std::string strfn(scriptfilename);
+    fs::path scriptfilepath = fs::path("Data") / "SKSE" / "Plugins" / "sl_triggers" / "commands" / strfn;
+    return scriptfilepath;
+}
     
 SLTSessionId sessionId;
 bool sessionIdGenerated = false;

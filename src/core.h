@@ -25,6 +25,7 @@ extern const std::string_view BASE_AME;
 
 #pragma region Random function declarations
 fs::path GetPluginPath();
+fs::path GetScriptfilePath(std::string_view scriptfilename);
 SLTSessionId GenerateNewSessionId(bool force = false);
 SLTSessionId GetSessionId();
 #pragma endregion

@@ -7,7 +7,7 @@ bool OperationRunner::RunOperationOnActor(RE::Actor* targetActor,
                                          RE::ActiveEffect* cmdPrimary, 
                                          const std::vector<RE::BSFixedString>& params) {
     if (!cmdPrimary || !targetActor || params.empty()) {
-        logger::error("RunOperationOnActor: Invalid parameters");
+        logger::error("RunOperationOnActor: Invalid parameters cmdPrimary({}) targetActor({}) params.empty({})", !cmdPrimary, !targetActor, params.empty());
         return false;
     }
     
@@ -22,17 +22,8 @@ bool OperationRunner::RunOperationOnActor(RE::Actor* targetActor,
         logger::error("RunOperationOnActor: Unable to find operation {} in function library cache", params[0].c_str());
         return false;
     }
-    
-    auto vmhandle = vm->GetObjectHandlePolicy()->GetHandleForObject(RE::ActiveEffect::VMTYPEID, cmdPrimary);
-    RE::BSFixedString callbackEvent("OnRunOperationOnActorCompleted");
-    
-    auto resultCallback = RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor>(
-        new VoidCallbackFunctor([vm, vmhandle, callbackEvent]() {
-            SKSE::GetTaskInterface()->AddTask([vm, vmhandle, callbackEvent]() {
-                vm->SendEvent(vmhandle, callbackEvent, RE::MakeFunctionArguments());
-            });
-        })
-    );
+
+    auto voidCallback = RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor>{};
     
     auto* operationArgs = RE::MakeFunctionArguments(
         static_cast<RE::Actor*>(targetActor), 
@@ -41,7 +32,7 @@ bool OperationRunner::RunOperationOnActor(RE::Actor* targetActor,
     );
     
     auto& cachedScript = cachedIt->second;
-    bool success = vm->DispatchStaticCall(cachedScript, params[0], operationArgs, resultCallback);
+    bool success = vm->DispatchStaticCall(cachedScript, params[0], operationArgs, voidCallback);
     
     if (!success) {
         logger::error("RunOperationOnActor: Failed to dispatch static call for operation {}", params[0].c_str());
