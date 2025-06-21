@@ -18,6 +18,8 @@ static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view inp
 
 static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey);
 
+static std::int32_t NormalizeScriptfilename(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename);
+
 static bool RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
                                             std::vector<std::string> tokens);
 
@@ -64,6 +66,10 @@ public:
         return SLT::SLTNativeFunctions::GetTranslatedString(PAPYRUS_FN_PARMS, input);
     }
 
+    static std::int32_t NormalizeScriptfilename(PAPYRUS_STATIC_ARGS, std::string_view scriptfilename) {
+        return SLT::SLTNativeFunctions::NormalizeScriptfilename(PAPYRUS_FN_PARMS, scriptfilename);
+    }
+
     static bool SmartEquals(PAPYRUS_STATIC_ARGS, std::string_view a, std::string_view b) {
         return SLT::SLTNativeFunctions::SmartEquals(PAPYRUS_FN_PARMS, a, b);
     }
@@ -99,6 +105,7 @@ public:
         reg.RegisterStatic("GetScriptsList", &SLTPapyrusFunctionProvider::GetScriptsList);
         reg.RegisterStatic("GetSessionId", &SLTPapyrusFunctionProvider::GetSessionId);
         reg.RegisterStatic("GetTranslatedString", &SLTPapyrusFunctionProvider::GetTranslatedString);
+        reg.RegisterStatic("NormalizeScriptfilename", &SLTPapyrusFunctionProvider::NormalizeScriptfilename);
         reg.RegisterStatic("SmartEquals", &SLTPapyrusFunctionProvider::SmartEquals);
         reg.RegisterStatic("SplitFileContents", &SLTPapyrusFunctionProvider::SplitFileContents);
         reg.RegisterStatic("SplitScriptContents", &SLTPapyrusFunctionProvider::SplitScriptContents);

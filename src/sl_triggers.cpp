@@ -141,6 +141,44 @@ std::vector<std::string> SLTNativeFunctions::GetTriggerKeys(PAPYRUS_NATIVE_DECL,
     return result;
 }
 
+/*
+0 - unrecognized
+1 - is explicitly .json
+2 - is explicitly .ini
+10 - implicitly .json
+20 - implicitly .ini
+*/
+std::int32_t SLTNativeFunctions::NormalizeScriptfilename(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename) {
+    fs::path scrpath = GetScriptfilePath(scriptfilename);
+    std::string scrfn = "";
+
+    if (!scrpath.has_extension()) {
+        scrfn = std::string(scriptfilename) + ".ini";
+        scrpath = GetScriptfilePath(scrfn);
+        if (!scrpath.empty() && fs::exists(scrpath)) {
+            return 20;
+        }
+        
+        scrfn = std::string(scriptfilename) + ".json";
+        scrpath = GetScriptfilePath(scrfn);
+        if (!scrpath.empty() && fs::exists(scrpath)) {
+            return 10;
+        }
+    } else {
+        scrfn = scrpath.extension().string();
+        if (!scrpath.empty() && fs::exists(scrpath)) {
+            if (scrfn == ".ini") {
+                return 2;
+            }
+            if (scrfn == ".json") {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 bool SLTNativeFunctions::RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
     std::vector<std::string> tokens) {
     return OperationRunner::RunOperationOnActor(cmdTarget, cmdPrimary, tokens);
