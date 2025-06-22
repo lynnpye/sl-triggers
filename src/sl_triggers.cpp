@@ -141,6 +141,22 @@ std::vector<std::string> SLTNativeFunctions::GetTriggerKeys(PAPYRUS_NATIVE_DECL,
     return result;
 }
 
+void SLTNativeFunctions::LogDebug(PAPYRUS_NATIVE_DECL, std::string_view logmsg) {
+    logger::debug("{}", logmsg);
+}
+
+void SLTNativeFunctions::LogError(PAPYRUS_NATIVE_DECL, std::string_view logmsg) {
+    logger::error("{}", logmsg);
+}
+
+void SLTNativeFunctions::LogInfo(PAPYRUS_NATIVE_DECL, std::string_view logmsg) {
+    logger::info("{}", logmsg);
+}
+
+void SLTNativeFunctions::LogWarn(PAPYRUS_NATIVE_DECL, std::string_view logmsg) {
+    logger::warn("{}", logmsg);
+}
+
 /*
 0 - unrecognized
 1 - is explicitly .json

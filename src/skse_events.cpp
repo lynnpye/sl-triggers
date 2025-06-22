@@ -14,9 +14,6 @@ namespace SLT {
 };
 
     void GameEventHandler::onLoad() {
-        fs::path debugmsg_log = GetPluginPath() / "debugmsg.log";
-        std::ofstream file(debugmsg_log, std::ios::trunc);
-
         // Register the provider
         REGISTER_PAPYRUS_PROVIDER(SLTPapyrusFunctionProvider, "sl_triggers");
         REGISTER_PAPYRUS_PROVIDER(SLTInternalPapyrusFunctionProvider, "sl_triggers_internal");

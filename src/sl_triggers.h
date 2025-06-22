@@ -18,6 +18,14 @@ static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view inp
 
 static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey);
 
+static void LogDebug(PAPYRUS_NATIVE_DECL, std::string_view logmsg);
+
+static void LogError(PAPYRUS_NATIVE_DECL, std::string_view logmsg);
+
+static void LogInfo(PAPYRUS_NATIVE_DECL, std::string_view logmsg);
+
+static void LogWarn(PAPYRUS_NATIVE_DECL, std::string_view logmsg);
+
 static std::int32_t NormalizeScriptfilename(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename);
 
 static bool RunOperationOnActor(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
@@ -131,6 +139,22 @@ public:
         return SLT::SLTNativeFunctions::GetTriggerKeys(PAPYRUS_FN_PARMS, extensionKey);
     }
 
+    static void LogDebug(PAPYRUS_STATIC_ARGS, std::string_view logmsg) {
+        SLT::SLTNativeFunctions::LogDebug(PAPYRUS_FN_PARMS, logmsg);
+    }
+
+    static void LogError(PAPYRUS_STATIC_ARGS, std::string_view logmsg) {
+        SLT::SLTNativeFunctions::LogError(PAPYRUS_FN_PARMS, logmsg);
+    }
+
+    static void LogInfo(PAPYRUS_STATIC_ARGS, std::string_view logmsg) {
+        SLT::SLTNativeFunctions::LogInfo(PAPYRUS_FN_PARMS, logmsg);
+    }
+
+    static void LogWarn(PAPYRUS_STATIC_ARGS, std::string_view logmsg) {
+        SLT::SLTNativeFunctions::LogWarn(PAPYRUS_FN_PARMS, logmsg);
+    }
+
     static bool RunOperationOnActor(PAPYRUS_STATIC_ARGS, RE::Actor* cmdTarget, RE::ActiveEffect* cmdPrimary,
                                             std::vector<std::string> tokens) {
         return SLT::SLTNativeFunctions::RunOperationOnActor(PAPYRUS_FN_PARMS, cmdTarget, cmdPrimary, tokens);
@@ -149,6 +173,10 @@ public:
 
         reg.RegisterStatic("DeleteTrigger", &SLTInternalPapyrusFunctionProvider::DeleteTrigger);
         reg.RegisterStatic("GetTriggerKeys", &SLTInternalPapyrusFunctionProvider::GetTriggerKeys);
+        reg.RegisterStatic("LogDebug", &SLTInternalPapyrusFunctionProvider::LogDebug);
+        reg.RegisterStatic("LogError", &SLTInternalPapyrusFunctionProvider::LogError);
+        reg.RegisterStatic("LogInfo", &SLTInternalPapyrusFunctionProvider::LogInfo);
+        reg.RegisterStatic("LogWarn", &SLTInternalPapyrusFunctionProvider::LogWarn);
         reg.RegisterStatic("RunOperationOnActor", &SLTInternalPapyrusFunctionProvider::RunOperationOnActor);
         reg.RegisterStatic("SetExtensionEnabled", &SLTInternalPapyrusFunctionProvider::SetExtensionEnabled);
         reg.RegisterStatic("StartScript", &SLTInternalPapyrusFunctionProvider::StartScript);
