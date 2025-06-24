@@ -36,11 +36,27 @@ public:
 #pragma endregion
 
 #pragma region Function Libraries declaration
+
+struct CaseInsensitiveHash {
+    std::size_t operator()(const std::string& key) const {
+        std::string lower_key = key;
+        std::transform(lower_key.begin(), lower_key.end(), lower_key.begin(), ::tolower);
+        return std::hash<std::string>{}(lower_key);
+    }
+};
+
+struct CaseInsensitiveEqual {
+    bool operator()(const std::string& lhs, const std::string& rhs) const {
+        return std::equal(lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+            [](char a, char b) { return std::tolower(a) == std::tolower(b); });
+    }
+};
+
 struct FunctionLibrary {
 
     static const std::string_view SLTCmdLib;
     static std::vector<std::unique_ptr<FunctionLibrary>> g_FunctionLibraries;
-    static std::unordered_map<std::string, std::string> functionScriptCache;
+    static std::unordered_map<std::string, std::string, CaseInsensitiveHash, CaseInsensitiveEqual> functionScriptCache;
 
 
     std::string configFile;

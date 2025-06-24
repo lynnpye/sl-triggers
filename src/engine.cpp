@@ -61,12 +61,13 @@ bool OperationRunner::RunOperationOnActor(RE::Actor* targetActor,
 #pragma region Function Libraries definition
 const std::string_view FunctionLibrary::SLTCmdLib = "sl_triggersCmdLibSLT";
 std::vector<std::unique_ptr<FunctionLibrary>> FunctionLibrary::g_FunctionLibraries;
-std::unordered_map<std::string, std::string> FunctionLibrary::functionScriptCache;
+
+std::unordered_map<std::string, std::string, CaseInsensitiveHash, CaseInsensitiveEqual> FunctionLibrary::functionScriptCache;
 
 FunctionLibrary* FunctionLibrary::ByExtensionKey(std::string_view _extensionKey) {
     auto it = std::find_if(g_FunctionLibraries.begin(), g_FunctionLibraries.end(),
         [_extensionKey = std::string(_extensionKey)](const std::unique_ptr<FunctionLibrary>& lib) {
-            return lib->extensionKey == _extensionKey;
+            return Util::String::iEquals(lib->extensionKey, _extensionKey);
         });
 
     if (it != g_FunctionLibraries.end()) {
