@@ -142,14 +142,10 @@ void Util::String::trim_inplace(std::string& str) {
     rtrim_inplace(str);
 }
 
-std::optional<std::int32_t> Util::String::StringToIntWithImplicitHexConversion(std::string_view _hexStr, bool requireHex) {
+std::optional<std::int32_t> Util::String::StringToIntWithImplicitHexConversion(std::string_view _hexStr) {
     std::string hexStr = trim(_hexStr);
     if (hexStr.empty()) {
-        if (requireHex) {
-            return std::nullopt;
-        } else {
-            return 0;
-        }
+        return 0;
     }
     const char* start = hexStr.data();
     const char* end = hexStr.data() + hexStr.size();
@@ -158,7 +154,7 @@ std::optional<std::int32_t> Util::String::StringToIntWithImplicitHexConversion(s
     if (hexStr.size() >= 2 && str::iEquals(hexStr.substr(0, 2), "0x")) {
         start += 2;
         base = 16;
-    } else if (requireHex) {
+    } else {
         return std::nullopt;
     }
     
@@ -462,7 +458,7 @@ RE::TESForm* FormUtil::Parse::GetForm(std::string_view data) {
             auto idOpt = Util::String::StringToIntWithImplicitHexConversion(sid);
             
             if (idOpt.has_value()) {
-                std::uint32_t id = static_cast<std::uint32_t>(idOpt.value());
+                RE::FormID id = static_cast<RE::FormID>(idOpt.value());
                 
                 auto* dataHandler = RE::TESDataHandler::GetSingleton();
                 if (dataHandler) {
@@ -471,14 +467,34 @@ RE::TESForm* FormUtil::Parse::GetForm(std::string_view data) {
             }
         }
     } 
-    else if (params.size() == 1) {
-        auto idOpt = Util::String::StringToIntWithImplicitHexConversion(data);
-        
-        if (idOpt.has_value() && idOpt.value() != 0) {
-            std::uint32_t id = static_cast<std::uint32_t>(idOpt.value());
-            retVal = RE::TESForm::LookupByID(id);
-        } else {
-            retVal = RE::TESForm::LookupByEditorID(data);
+    else {
+        params = Util::String::Split(data, "|");
+        if (params.size() == 2) {
+            const std::string& sid = params[0];
+            const std::string& modfile = params[1];
+            
+            if (!modfile.empty() && !sid.empty()) {
+                auto idOpt = Util::String::StringToIntWithImplicitHexConversion(sid);
+                
+                if (idOpt.has_value()) {
+                    RE::FormID id = static_cast<RE::FormID>(idOpt.value());
+                    
+                    auto* dataHandler = RE::TESDataHandler::GetSingleton();
+                    if (dataHandler) {
+                        retVal = dataHandler->LookupForm(id, modfile);
+                    }
+                }
+            }
+        } 
+        else if (params.size() == 1) {
+            auto idOpt = Util::String::StringToIntWithImplicitHexConversion(data);
+            
+            if (idOpt.has_value() && idOpt.value() != 0) {
+                std::uint32_t id = static_cast<std::uint32_t>(idOpt.value());
+                retVal = RE::TESForm::LookupByID(id);
+            } else {
+                retVal = RE::TESForm::LookupByEditorID(data);
+            }
         }
     }
     

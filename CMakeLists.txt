@@ -9,6 +9,7 @@ include(GNUInstallDirs)
 # Otherwise, you can set OUTPUT_FOLDER to any place you'd like :)
 # set(OUTPUT_FOLDER "C:/path/to/any/folder")
 set(OUTPUT_FOLDER "D:/wabbajack/modlistinstalls/SME/mods/AaDevelopment")
+# set(OUTPUT_FOLDER "D:/wabbajack/modlistinstalls/NEFARAM.15.4.1/mods/AaDevelopment")
 
 # YOU DO NOT NEED TO EDIT ANYTHING BELOW HERE
 #
