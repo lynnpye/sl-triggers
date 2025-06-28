@@ -154,11 +154,32 @@ std::optional<std::int32_t> Util::String::StringToIntWithImplicitHexConversion(s
     if (hexStr.size() >= 2 && str::iEquals(hexStr.substr(0, 2), "0x")) {
         start += 2;
         base = 16;
-    } else {
-        return std::nullopt;
     }
     
     std::int32_t result;
+    auto [ptr, ec] = std::from_chars(start, end, result, base);
+    
+    if (ec == std::errc{} && ptr == end) {
+        return result;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::uint32_t> Util::String::StringToUnsignedIntWithImplicitHexConversion(std::string_view _hexStr) {
+    std::string hexStr = trim(_hexStr);
+    if (hexStr.empty()) {
+        return 0;
+    }
+    const char* start = hexStr.data();
+    const char* end = hexStr.data() + hexStr.size();
+    int base = 10;
+    
+    if (hexStr.size() >= 2 && str::iEquals(hexStr.substr(0, 2), "0x")) {
+        start += 2;
+        base = 16;
+    }
+    
+    std::uint32_t result;
     auto [ptr, ec] = std::from_chars(start, end, result, base);
     
     if (ec == std::errc{} && ptr == end) {
@@ -455,7 +476,7 @@ RE::TESForm* FormUtil::Parse::GetForm(std::string_view data) {
         const std::string& sid = params[1];
         
         if (!modfile.empty() && !sid.empty()) {
-            auto idOpt = Util::String::StringToIntWithImplicitHexConversion(sid);
+            auto idOpt = Util::String::StringToUnsignedIntWithImplicitHexConversion(sid);
             
             if (idOpt.has_value()) {
                 RE::FormID id = static_cast<RE::FormID>(idOpt.value());
@@ -474,7 +495,7 @@ RE::TESForm* FormUtil::Parse::GetForm(std::string_view data) {
             const std::string& modfile = params[1];
             
             if (!modfile.empty() && !sid.empty()) {
-                auto idOpt = Util::String::StringToIntWithImplicitHexConversion(sid);
+                auto idOpt = Util::String::StringToUnsignedIntWithImplicitHexConversion(sid);
                 
                 if (idOpt.has_value()) {
                     RE::FormID id = static_cast<RE::FormID>(idOpt.value());
@@ -487,10 +508,10 @@ RE::TESForm* FormUtil::Parse::GetForm(std::string_view data) {
             }
         } 
         else if (params.size() == 1) {
-            auto idOpt = Util::String::StringToIntWithImplicitHexConversion(data);
+            auto idOpt = Util::String::StringToUnsignedIntWithImplicitHexConversion(data);
             
             if (idOpt.has_value() && idOpt.value() != 0) {
-                std::uint32_t id = static_cast<std::uint32_t>(idOpt.value());
+                RE::FormID id = static_cast<RE::FormID>(idOpt.value());
                 retVal = RE::TESForm::LookupByID(id);
             } else {
                 retVal = RE::TESForm::LookupByEditorID(data);

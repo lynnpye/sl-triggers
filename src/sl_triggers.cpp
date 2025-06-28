@@ -488,8 +488,6 @@ std::vector<std::string> SLTNativeFunctions::TokenizeForVariableSubstitution(PAP
     size_t pos = 0;
     std::string currentLiteral;
     
-    const std::set<std::string> validScopes = {"local", "thread", "target", "global"};
-    
     while (pos < input.length()) {
         size_t openBrace = input.find('{', pos);
         
@@ -534,15 +532,6 @@ std::vector<std::string> SLTNativeFunctions::TokenizeForVariableSubstitution(PAP
         varName.erase(varName.find_last_not_of(" \t") + 1);
         
         if (!varName.empty() && IsValidVariableName(varName)) {
-            // Check if variable has a scope and if it's valid
-            size_t dotPos = varName.find('.');
-            if (dotPos != std::string::npos) {
-                std::string scope = varName.substr(0, dotPos);
-                if (validScopes.find(scope) == validScopes.end()) {
-                    // Invalid scope, remove scope and dot
-                    varName = varName.substr(dotPos + 1);
-                }
-            }
             
             // Add current literal if not empty
             if (!currentLiteral.empty()) {
