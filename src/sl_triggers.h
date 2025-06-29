@@ -36,9 +36,11 @@ static void SetExtensionEnabled(PAPYRUS_NATIVE_DECL, std::string_view extensionK
 
 static bool SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, std::string_view b);
 
-static std::vector<std::string> SplitFileContents(PAPYRUS_NATIVE_DECL, std::string_view filecontents);
+//static std::vector<std::string> SplitFileContents(PAPYRUS_NATIVE_DECL, std::string_view filecontents);
 
 static std::vector<std::string> SplitScriptContents(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename);
+
+static std::vector<std::string> SplitScriptContentsAndTokenize(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename);
 
 static bool StartScript(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, std::string_view initialScriptName);
 
@@ -82,12 +84,12 @@ public:
         return SLT::SLTNativeFunctions::SmartEquals(PAPYRUS_FN_PARMS, a, b);
     }
 
-    static std::vector<std::string> SplitFileContents(PAPYRUS_STATIC_ARGS, std::string_view content) {
-        return SLT::SLTNativeFunctions::SplitFileContents(PAPYRUS_FN_PARMS, content);
-    }
-
     static std::vector<std::string> SplitScriptContents(PAPYRUS_STATIC_ARGS, std::string_view scriptfilename) {
         return SLT::SLTNativeFunctions::SplitScriptContents(PAPYRUS_FN_PARMS, scriptfilename);
+    }
+
+    static std::vector<std::string> SplitScriptContentsAndTokenize(PAPYRUS_STATIC_ARGS, std::string_view scriptfilename) {
+        return SLT::SLTNativeFunctions::SplitScriptContentsAndTokenize(PAPYRUS_FN_PARMS, scriptfilename);
     }
 
     static std::vector<std::string> Tokenize(PAPYRUS_STATIC_ARGS, std::string_view input) {
@@ -115,8 +117,8 @@ public:
         reg.RegisterStatic("GetTranslatedString", &SLTPapyrusFunctionProvider::GetTranslatedString);
         reg.RegisterStatic("NormalizeScriptfilename", &SLTPapyrusFunctionProvider::NormalizeScriptfilename);
         reg.RegisterStatic("SmartEquals", &SLTPapyrusFunctionProvider::SmartEquals);
-        reg.RegisterStatic("SplitFileContents", &SLTPapyrusFunctionProvider::SplitFileContents);
         reg.RegisterStatic("SplitScriptContents", &SLTPapyrusFunctionProvider::SplitScriptContents);
+        reg.RegisterStatic("SplitScriptContentsAndTokenize", &SLTPapyrusFunctionProvider::SplitScriptContentsAndTokenize);
         reg.RegisterStatic("Tokenize", &SLTPapyrusFunctionProvider::Tokenize);
         reg.RegisterStatic("Tokenizev2", &SLTPapyrusFunctionProvider::Tokenizev2);
         reg.RegisterStatic("TokenizeForVariableSubstitution", &SLTPapyrusFunctionProvider::TokenizeForVariableSubstitution);

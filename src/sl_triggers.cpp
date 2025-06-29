@@ -237,6 +237,7 @@ bool SLTNativeFunctions::SmartEquals(PAPYRUS_NATIVE_DECL, std::string_view a, st
     return outcome;
 }
 
+/*
 std::vector<std::string> SLTNativeFunctions::SplitFileContents(PAPYRUS_NATIVE_DECL, std::string_view content_view) {
     std::vector<std::string> lines;
     size_t start = 0;
@@ -277,6 +278,7 @@ std::vector<std::string> SLTNativeFunctions::SplitFileContents(PAPYRUS_NATIVE_DE
 
     return lines;
 }
+*/
 
 std::vector<std::string> SLTNativeFunctions::SplitScriptContents(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename) {
     std::vector<std::string> lines;
@@ -294,6 +296,69 @@ std::vector<std::string> SLTNativeFunctions::SplitScriptContents(PAPYRUS_NATIVE_
     }
 
     return lines;
+}
+
+/**
+; returns string[]
+; 0 : count of functional lines returned
+; N-cmdLines : scriptlineno for each line
+; N-cmdLines : tokencount for each line
+; N-cmdLines : tokenoffsets for each line
+; N- + : full set of tokens
+ */
+std::vector<std::string> SLTNativeFunctions::SplitScriptContentsAndTokenize(PAPYRUS_NATIVE_DECL, std::string_view scriptfilename) {
+    std::vector<std::string> scriptlineno;
+    std::vector<std::string> tokencount;
+    std::vector<std::string> tokenoffsets;
+
+    std::vector<std::string> linetokens;
+    
+    std::vector<std::string> tokenaccumulator;
+
+    fs::path filepath = GetScriptfilePath(scriptfilename);
+    std::int32_t lineno = 0;
+    std::int32_t tokcount = 0;
+    std::int32_t tokoffset = 0;
+
+    if (fs::exists(filepath) && fs::is_regular_file(filepath)) {
+        std::ifstream file(filepath);
+        if (file.good()) {
+            std::string line;
+            while (std::getline(file, line)) {
+                lineno++;
+
+                line = Util::String::truncateAt(Util::String::trim(line), ';');
+
+                linetokens = Tokenizev2(PAPYRUS_FN_PARMS, line);
+
+                if (linetokens.size() < 1) {
+                    continue;
+                }
+
+                tokoffset += tokcount; // accumulate from previous tokcount
+                tokcount = linetokens.size();
+
+                scriptlineno.push_back(std::to_string(lineno));
+                tokencount.push_back(std::to_string(tokcount));
+                tokenoffsets.push_back(std::to_string(tokoffset));
+
+                tokenaccumulator.append_range(linetokens);
+            }
+        }
+    }
+
+    std::vector<std::string> result;
+
+    auto sz = 1 + scriptlineno.size() + tokencount.size() + tokenoffsets.size() + tokenaccumulator.size();
+    result.reserve(1 + scriptlineno.size() + tokencount.size() + tokenoffsets.size() + tokenaccumulator.size());
+
+    result.push_back(std::to_string(scriptlineno.size()));
+    result.append_range(scriptlineno);
+    result.append_range(tokencount);
+    result.append_range(tokenoffsets);
+    result.append_range(tokenaccumulator);
+
+    return result;
 }
 
 bool SLTNativeFunctions::StartScript(PAPYRUS_NATIVE_DECL, RE::Actor* cmdTarget, std::string_view initialScriptName) {
@@ -459,7 +524,7 @@ std::vector<std::string> SLTNativeFunctions::Tokenizev2(PAPYRUS_NATIVE_DECL, std
             tokens.push_back(std::string(input.substr(start, pos - start)));
         }
     }
-    
+
     return tokens;
 }
 
