@@ -54,6 +54,34 @@ RE::TESForm* SLTNativeFunctions::GetForm(PAPYRUS_NATIVE_DECL, std::string_view a
     return FormUtil::Parse::GetForm(a_editorID);
 }
 
+std::string SLTNativeFunctions::GetNumericLiteral(PAPYRUS_NATIVE_DECL, std::string_view token) {
+    std::int32_t intValue;
+    std::from_chars_result intResult;
+    
+    // Check for hexadecimal prefix
+    if (token.size() > 2 && (token.substr(0, 2) == "0x" || token.substr(0, 2) == "0X")) {
+        // Parse as hexadecimal (skip the "0x" prefix)
+        intResult = std::from_chars(token.data() + 2, token.data() + token.size(), intValue, 16);
+    } else {
+        // Parse as decimal
+        intResult = std::from_chars(token.data(), token.data() + token.size(), intValue, 10);
+    }
+
+    if (intResult.ec == std::errc{} && intResult.ptr == token.data() + token.size()) {
+        return std::format("int:{}", intValue);
+    }
+
+    float_t floatValue;
+    auto floatResult = std::from_chars(token.data(), token.data() + token.size(), floatValue);
+    
+    // If float parsing succeeded and consumed the entire string
+    if (floatResult.ec == std::errc{} && floatResult.ptr == token.data() + token.size()) {
+        return std::format("float:{}", floatValue);
+    }
+
+    return "invalid";
+}
+
 std::vector<std::string> SLTNativeFunctions::GetScriptsList(PAPYRUS_NATIVE_DECL) {
     std::vector<std::string> result;
 

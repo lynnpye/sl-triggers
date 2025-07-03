@@ -10,6 +10,8 @@ static bool DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view extKeyStr, std::
 
 static RE::TESForm* GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID);
 
+static std::string GetNumericLiteral(PAPYRUS_NATIVE_DECL, std::string_view token);
+
 static std::vector<std::string> GetScriptsList(PAPYRUS_NATIVE_DECL);
 
 static SLTSessionId GetSessionId(PAPYRUS_NATIVE_DECL);
@@ -66,6 +68,10 @@ public:
         return SLT::SLTNativeFunctions::GetForm(PAPYRUS_FN_PARMS, someFormOfFormIdentification);
     }
 
+    static std::string GetNumericLiteral(PAPYRUS_STATIC_ARGS, std::string_view token) {
+        return SLT::SLTNativeFunctions::GetNumericLiteral(PAPYRUS_FN_PARMS, token);
+    }
+
     static std::vector<std::string> GetScriptsList(PAPYRUS_STATIC_ARGS) {
         return SLT::SLTNativeFunctions::GetScriptsList(PAPYRUS_FN_PARMS);
     }
@@ -118,6 +124,7 @@ public:
         SLT::binding::PapyrusRegistrar<SLTPapyrusFunctionProvider> reg(vm, className);
         
         reg.RegisterStatic("GetForm", &SLTPapyrusFunctionProvider::GetForm);
+        reg.RegisterStatic("GetNumericLiteral", &SLTPapyrusFunctionProvider::GetNumericLiteral);
         reg.RegisterStatic("GetScriptsList", &SLTPapyrusFunctionProvider::GetScriptsList);
         reg.RegisterStatic("GetSessionId", &SLTPapyrusFunctionProvider::GetSessionId);
         reg.RegisterStatic("GetTopicInfoResponse", &SLTPapyrusFunctionProvider::GetTopicInfoResponse);
