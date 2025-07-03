@@ -46,6 +46,10 @@ bool SLTNativeFunctions::DeleteTrigger(PAPYRUS_NATIVE_DECL, std::string_view ext
     }
 }
 
+void FuzPlay(PAPYRUS_NATIVE_DECL, std::string_view fuzFileName) {
+
+}
+
 RE::TESForm* SLTNativeFunctions::GetForm(PAPYRUS_NATIVE_DECL, std::string_view a_editorID) {
     return FormUtil::Parse::GetForm(a_editorID);
 }
@@ -77,6 +81,22 @@ std::vector<std::string> SLTNativeFunctions::GetScriptsList(PAPYRUS_NATIVE_DECL)
 
 SLTSessionId SLTNativeFunctions::GetSessionId(PAPYRUS_NATIVE_DECL) {
     return SLT::GetSessionId();
+}
+
+std::string SLTNativeFunctions::GetTopicInfoResponse(PAPYRUS_NATIVE_DECL, RE::TESTopicInfo* topicInfo) {
+    if (!topicInfo) {
+        logger::error("GetTopicInfoResponses called but topicInfo was null");
+    } else {
+        RE::DialogueItem dialogueItem = topicInfo->GetDialogueData(nullptr);
+        
+        for (auto* response : dialogueItem.responses) {
+            if (response) {
+                return std::string(response->text.c_str());
+            }
+        }
+    }
+
+    return "";
 }
 
 std::string SLTNativeFunctions::GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input) {

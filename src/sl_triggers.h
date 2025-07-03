@@ -14,6 +14,8 @@ static std::vector<std::string> GetScriptsList(PAPYRUS_NATIVE_DECL);
 
 static SLTSessionId GetSessionId(PAPYRUS_NATIVE_DECL);
 
+static std::string GetTopicInfoResponse(PAPYRUS_NATIVE_DECL, RE::TESTopicInfo* topicInfo);
+
 static std::string GetTranslatedString(PAPYRUS_NATIVE_DECL, std::string_view input);
 
 static std::vector<std::string> GetTriggerKeys(PAPYRUS_NATIVE_DECL, std::string_view extensionKey);
@@ -72,6 +74,10 @@ public:
         return SLT::SLTNativeFunctions::GetSessionId(PAPYRUS_FN_PARMS);
     }
 
+    static std::string GetTopicInfoResponse(PAPYRUS_STATIC_ARGS, RE::TESTopicInfo* topicInfo) {
+        return SLT::SLTNativeFunctions::GetTopicInfoResponse(PAPYRUS_FN_PARMS, topicInfo);
+    }
+
     static std::string GetTranslatedString(PAPYRUS_STATIC_ARGS, std::string_view input) {
         return SLT::SLTNativeFunctions::GetTranslatedString(PAPYRUS_FN_PARMS, input);
     }
@@ -114,6 +120,7 @@ public:
         reg.RegisterStatic("GetForm", &SLTPapyrusFunctionProvider::GetForm);
         reg.RegisterStatic("GetScriptsList", &SLTPapyrusFunctionProvider::GetScriptsList);
         reg.RegisterStatic("GetSessionId", &SLTPapyrusFunctionProvider::GetSessionId);
+        reg.RegisterStatic("GetTopicInfoResponse", &SLTPapyrusFunctionProvider::GetTopicInfoResponse);
         reg.RegisterStatic("GetTranslatedString", &SLTPapyrusFunctionProvider::GetTranslatedString);
         reg.RegisterStatic("NormalizeScriptfilename", &SLTPapyrusFunctionProvider::NormalizeScriptfilename);
         reg.RegisterStatic("SmartEquals", &SLTPapyrusFunctionProvider::SmartEquals);
