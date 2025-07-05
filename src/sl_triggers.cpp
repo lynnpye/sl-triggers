@@ -217,6 +217,12 @@ std::int32_t SLTNativeFunctions::NormalizeScriptfilename(PAPYRUS_NATIVE_DECL, st
     std::string scrfn = "";
 
     if (!scrpath.has_extension()) {
+        scrfn = std::string(scriptfilename) + ".sltscript";
+        scrpath = GetScriptfilePath(scrfn);
+        if (!scrpath.empty() && fs::exists(scrpath)) {
+            return 30;
+        }
+
         scrfn = std::string(scriptfilename) + ".ini";
         scrpath = GetScriptfilePath(scrfn);
         if (!scrpath.empty() && fs::exists(scrpath)) {
@@ -231,6 +237,9 @@ std::int32_t SLTNativeFunctions::NormalizeScriptfilename(PAPYRUS_NATIVE_DECL, st
     } else {
         scrfn = scrpath.extension().string();
         if (!scrpath.empty() && fs::exists(scrpath)) {
+            if (scrfn == ".sltscript") {
+                return 3;
+            }
             if (scrfn == ".ini") {
                 return 2;
             }
