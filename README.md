@@ -1,3 +1,5 @@
+# Unsupported Legacy Repository
+This git repo is an unsupported legacy repo containing an older/out-of-date copy of the sl-triggers.dll SKSE plugin source code. This source has been relocated to a sub-project at the [sl_triggers github repo](https://github.com/lynnpye/sl_triggers). This copy may be removed at some point but is currently available for anyone interested in using it as a source of inspiration for their own code.
 
 # CommonLibSSE NG
 
